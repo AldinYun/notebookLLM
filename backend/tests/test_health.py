@@ -27,6 +27,26 @@ def test_text_ingestion_search_and_rag_flow() -> None:
     assert notebook_response.status_code == 201
     notebook_id = notebook_response.json()["notebook_id"]
 
+    profiles_response = client.get(f"/profiles/search?notebook_id={notebook_id}")
+    assert profiles_response.status_code == 200
+    assert [profile["name"] for profile in profiles_response.json()] == [
+        "Fast BM25",
+        "Semantic Vector",
+        "Balanced RAG",
+    ]
+
+    custom_profile_response = client.post(
+        "/profiles/search",
+        json={
+            "notebook_id": notebook_id,
+            "name": "Hybrid Debug",
+            "retrievers": [{"mode": "hybrid", "top_k": 10, "weight": 1.0}],
+            "self_corrective_enabled": True,
+            "final_context_limit": 8,
+        },
+    )
+    assert custom_profile_response.status_code == 201
+
     document_response = client.post(
         "/documents/ingest-text",
         json={

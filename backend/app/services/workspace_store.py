@@ -98,6 +98,17 @@ class WorkspaceStore:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS search_profiles (
+                    profile_id TEXT PRIMARY KEY,
+                    notebook_id TEXT NOT NULL REFERENCES notebooks(notebook_id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    retrievers_json TEXT NOT NULL,
+                    self_corrective_enabled INTEGER NOT NULL,
+                    final_context_limit INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_documents_notebook_id
                     ON documents(notebook_id);
 
@@ -109,6 +120,9 @@ class WorkspaceStore:
 
                 CREATE INDEX IF NOT EXISTS idx_rag_executions_notebook_id
                     ON rag_executions(notebook_id);
+
+                CREATE INDEX IF NOT EXISTS idx_search_profiles_notebook_id
+                    ON search_profiles(notebook_id);
                 """
             )
             connection.commit()
@@ -136,6 +150,7 @@ class WorkspaceStore:
                     _serialize_datetime(notebook.updated_at),
                 ),
             )
+            self._insert_default_search_profiles(connection, notebook.notebook_id, now)
             connection.commit()
         return notebook
 
@@ -338,11 +353,75 @@ class WorkspaceStore:
             ).fetchone()
         return self._rag_execution_from_row(row) if row is not None else None
 
+    def create_search_profile(
+        self,
+        notebook_id: str,
+        name: str,
+        retrievers: list[dict],
+        self_corrective_enabled: bool,
+        final_context_limit: int,
+    ) -> dict:
+        now = utc_now()
+        profile_id = f"sp_{uuid4().hex[:12]}"
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO search_profiles (
+                    profile_id,
+                    notebook_id,
+                    name,
+                    retrievers_json,
+                    self_corrective_enabled,
+                    final_context_limit,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    profile_id,
+                    notebook_id,
+                    name,
+                    json.dumps(retrievers),
+                    1 if self_corrective_enabled else 0,
+                    final_context_limit,
+                    _serialize_datetime(now),
+                    _serialize_datetime(now),
+                ),
+            )
+            connection.commit()
+        profile = self.get_search_profile(profile_id)
+        if profile is None:
+            raise RuntimeError("Search profile was not persisted")
+        return profile
+
+    def list_search_profiles(self, notebook_id: str) -> list[dict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM search_profiles
+                WHERE notebook_id = ?
+                ORDER BY created_at ASC
+                """,
+                (notebook_id,),
+            ).fetchall()
+        return [self._search_profile_from_row(row) for row in rows]
+
+    def get_search_profile(self, profile_id: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM search_profiles WHERE profile_id = ?",
+                (profile_id,),
+            ).fetchone()
+        return self._search_profile_from_row(row) if row is not None else None
+
     def reset(self) -> None:
         with self._connect() as connection:
             connection.executescript(
                 """
                 DELETE FROM rag_executions;
+                DELETE FROM search_profiles;
                 DELETE FROM chunks;
                 DELETE FROM documents;
                 DELETE FROM notebooks;
@@ -401,6 +480,85 @@ class WorkspaceStore:
             "elapsed_ms": float(row["elapsed_ms"]),
             "created_at": _parse_datetime(row["created_at"]),
         }
+
+    def _search_profile_from_row(self, row: sqlite3.Row) -> dict:
+        return {
+            "profile_id": row["profile_id"],
+            "notebook_id": row["notebook_id"],
+            "name": row["name"],
+            "retrievers": json.loads(row["retrievers_json"]),
+            "self_corrective_enabled": bool(row["self_corrective_enabled"]),
+            "final_context_limit": int(row["final_context_limit"]),
+            "created_at": _parse_datetime(row["created_at"]),
+            "updated_at": _parse_datetime(row["updated_at"]),
+        }
+
+    def _insert_default_search_profiles(
+        self,
+        connection: sqlite3.Connection,
+        notebook_id: str,
+        now: datetime,
+    ) -> None:
+        profiles = [
+            (
+                f"sp_{uuid4().hex[:12]}",
+                "Fast BM25",
+                [{"mode": "bm25", "top_k": 5, "weight": 1.0}],
+                0,
+                5,
+            ),
+            (
+                f"sp_{uuid4().hex[:12]}",
+                "Semantic Vector",
+                [{"mode": "vector", "top_k": 5, "weight": 1.0}],
+                0,
+                5,
+            ),
+            (
+                f"sp_{uuid4().hex[:12]}",
+                "Balanced RAG",
+                [
+                    {"mode": "bm25", "top_k": 5, "weight": 1.0},
+                    {"mode": "vector", "top_k": 5, "weight": 1.0},
+                ],
+                1,
+                8,
+            ),
+        ]
+        connection.executemany(
+            """
+            INSERT INTO search_profiles (
+                profile_id,
+                notebook_id,
+                name,
+                retrievers_json,
+                self_corrective_enabled,
+                final_context_limit,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    profile_id,
+                    notebook_id,
+                    name,
+                    json.dumps(retrievers),
+                    self_corrective_enabled,
+                    final_context_limit,
+                    _serialize_datetime(now),
+                    _serialize_datetime(now),
+                )
+                for (
+                    profile_id,
+                    name,
+                    retrievers,
+                    self_corrective_enabled,
+                    final_context_limit,
+                ) in profiles
+            ],
+        )
 
 
 workspace_store = WorkspaceStore()

@@ -119,3 +119,22 @@ class RagRunResponse(BaseModel):
 class RagExecutionResponse(RagRunResponse):
     notebook_id: str
     created_at: datetime
+
+
+class SearchProfileCreate(BaseModel):
+    notebook_id: str
+    name: str = Field(min_length=1, max_length=120)
+    retrievers: list[RetrieverRequest] = Field(min_length=1)
+    self_corrective_enabled: bool = False
+    final_context_limit: int = Field(default=8, ge=1, le=20)
+
+
+class SearchProfileResponse(BaseModel):
+    profile_id: str
+    notebook_id: str
+    name: str
+    retrievers: list[RetrieverRequest]
+    self_corrective_enabled: bool
+    final_context_limit: int
+    created_at: datetime
+    updated_at: datetime

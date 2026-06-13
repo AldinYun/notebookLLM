@@ -384,6 +384,31 @@ small {
   gap: 8px;
 }
 
+.profileSelectList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.profileSelect {
+  align-items: flex-start;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  min-height: 64px;
+  padding: 12px;
+  text-align: left;
+}
+
+.profileSelect.active {
+  background: #ecfdf5;
+  border-color: #99f6e4;
+  color: var(--accent-dark);
+}
+
 .toggleRow {
   align-items: center;
   color: #344054;
@@ -394,6 +419,20 @@ small {
 }
 
 .toggleRow input {
+  flex: 0 0 auto;
+}
+
+.profileSave {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 8px;
+}
+
+.profileSave button {
   flex: 0 0 auto;
 }
 

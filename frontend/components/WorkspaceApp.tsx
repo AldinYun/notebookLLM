@@ -34,6 +34,12 @@ type DocumentItem = {
 
 type RetrieverMode = "bm25" | "vector" | "hybrid" | "text";
 
+type RetrieverConfig = {
+  mode: RetrieverMode;
+  top_k: number;
+  weight: number;
+};
+
 type SearchHit = {
   chunk_id: string;
   document_id: string;
@@ -79,12 +85,21 @@ type RagExecution = RagResponse & {
   created_at: string;
 };
 
+type SearchProfile = {
+  profile_id: string;
+  notebook_id: string;
+  name: string;
+  retrievers: RetrieverConfig[];
+  self_corrective_enabled: boolean;
+  final_context_limit: number;
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-const retrievers: { mode: RetrieverMode; label: string; topK: number }[] = [
-  { mode: "bm25", label: "BM25", topK: 5 },
-  { mode: "vector", label: "Vector", topK: 5 },
-  { mode: "hybrid", label: "Hybrid", topK: 10 },
+const defaultRetrievers: RetrieverConfig[] = [
+  { mode: "bm25", top_k: 5, weight: 1 },
+  { mode: "vector", top_k: 5, weight: 1 },
+  { mode: "hybrid", top_k: 10, weight: 1 },
 ];
 
 const workflowCards = [
@@ -139,6 +154,9 @@ export function WorkspaceApp() {
   );
   const [query, setQuery] = useState("How should BM25 and vector retrievers be combined?");
   const [selfCorrectiveEnabled, setSelfCorrectiveEnabled] = useState(true);
+  const [searchProfiles, setSearchProfiles] = useState<SearchProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [profileName, setProfileName] = useState("Balanced Debug");
   const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
   const [ragResult, setRagResult] = useState<RagResponse | null>(null);
   const [ragExecutions, setRagExecutions] = useState<RagExecution[]>([]);
@@ -149,14 +167,18 @@ export function WorkspaceApp() {
   const selectedDocuments = documents.filter(
     (document) => document.notebook_id === selectedNotebookId
   );
+  const selectedProfile = searchProfiles.find((profile) => profile.profile_id === selectedProfileId);
+  const activeRetrievers = selectedProfile?.retrievers ?? defaultRetrievers;
+  const activeFinalContextLimit = selectedProfile?.final_context_limit ?? 8;
 
   const retrieverSummaries = useMemo(() => {
-    return retrievers.map((retriever) => ({
+    return activeRetrievers.map((retriever) => ({
       ...retriever,
+      label: retriever.mode.toUpperCase(),
       hits: searchResult?.retriever_summaries[retriever.mode] ?? 0,
       latency: searchResult ? `${searchResult.elapsed_ms} ms` : "not run",
     }));
-  }, [searchResult]);
+  }, [activeRetrievers, searchResult]);
 
   useEffect(() => {
     void refreshWorkspace();
@@ -173,6 +195,7 @@ export function WorkspaceApp() {
       const fallbackNotebookId = nextNotebookId || selectedNotebookId || nextNotebooks[0]?.notebook_id || "";
       setSelectedNotebookId(fallbackNotebookId);
       if (fallbackNotebookId) {
+        await refreshSearchProfiles(fallbackNotebookId);
         await refreshRagExecutions(fallbackNotebookId);
       }
       setStatusMessage(`Connected to ${API_BASE_URL}`);
@@ -190,6 +213,51 @@ export function WorkspaceApp() {
       `/rag/executions?notebook_id=${encodeURIComponent(notebookId)}`
     );
     setRagExecutions(executions);
+  }
+
+  async function refreshSearchProfiles(notebookId = selectedNotebookId) {
+    if (!notebookId) {
+      setSearchProfiles([]);
+      setSelectedProfileId("");
+      return;
+    }
+    const profiles = await requestJson<SearchProfile[]>(
+      `/profiles/search?notebook_id=${encodeURIComponent(notebookId)}`
+    );
+    setSearchProfiles(profiles);
+    const nextProfile = profiles.find((profile) => profile.profile_id === selectedProfileId) ?? profiles[0];
+    setSelectedProfileId(nextProfile?.profile_id ?? "");
+    if (nextProfile) {
+      setSelfCorrectiveEnabled(nextProfile.self_corrective_enabled);
+    }
+  }
+
+  async function createSearchProfile() {
+    if (!selectedNotebookId) {
+      setStatusMessage("Create or select a notebook first");
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      const profile = await requestJson<SearchProfile>("/profiles/search", {
+        method: "POST",
+        body: JSON.stringify({
+          notebook_id: selectedNotebookId,
+          name: profileName,
+          retrievers: activeRetrievers,
+          self_corrective_enabled: selfCorrectiveEnabled,
+          final_context_limit: activeFinalContextLimit,
+        }),
+      });
+      await refreshSearchProfiles(selectedNotebookId);
+      setSelectedProfileId(profile.profile_id);
+      setStatusMessage(`Saved search profile ${profile.name}`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Search profile save failed");
+    } finally {
+      setIsBusy(false);
+    }
   }
 
   async function createNotebook(event: FormEvent<HTMLFormElement>) {
@@ -250,9 +318,10 @@ export function WorkspaceApp() {
         body: JSON.stringify({
           notebook_id: selectedNotebookId,
           query,
-          retrievers: retrievers.map((retriever) => ({
+          retrievers: activeRetrievers.map((retriever) => ({
             mode: retriever.mode,
-            top_k: retriever.topK,
+            top_k: retriever.top_k,
+            weight: retriever.weight,
           })),
         }),
       });
@@ -279,11 +348,14 @@ export function WorkspaceApp() {
           notebook_id: selectedNotebookId,
           question: query,
           retrievers: [
-            { mode: "bm25", top_k: 5 },
-            { mode: "vector", top_k: 5 },
+            ...activeRetrievers.map((retriever) => ({
+              mode: retriever.mode,
+              top_k: retriever.top_k,
+              weight: retriever.weight,
+            })),
           ],
           self_corrective_enabled: selfCorrectiveEnabled,
-          final_context_limit: 8,
+          final_context_limit: activeFinalContextLimit,
         }),
       });
       setRagResult(result);
@@ -347,7 +419,10 @@ export function WorkspaceApp() {
                   key={notebook.notebook_id}
                   onClick={() => {
                     setSelectedNotebookId(notebook.notebook_id);
+                    setSearchResult(null);
+                    setRagResult(null);
                     void refreshRagExecutions(notebook.notebook_id);
+                    void refreshSearchProfiles(notebook.notebook_id);
                   }}
                   type="button"
                 >
@@ -426,7 +501,7 @@ export function WorkspaceApp() {
                 <article className="retrieverCard" key={retriever.mode}>
                   <div>
                     <strong>{retriever.label}</strong>
-                    <small>Top {retriever.topK}</small>
+                    <small>Top {retriever.top_k}</small>
                   </div>
                   <p>{retriever.hits}</p>
                   <span>{retriever.latency}</span>
@@ -467,6 +542,24 @@ export function WorkspaceApp() {
                 <Bot aria-hidden="true" size={20} />
                 <h2>RAG Profile</h2>
               </div>
+              <div className="profileSelectList">
+                {searchProfiles.map((profile) => (
+                  <button
+                    className={`profileSelect ${profile.profile_id === selectedProfileId ? "active" : ""}`}
+                    key={profile.profile_id}
+                    onClick={() => {
+                      setSelectedProfileId(profile.profile_id);
+                      setSelfCorrectiveEnabled(profile.self_corrective_enabled);
+                    }}
+                    type="button"
+                  >
+                    <strong>{profile.name}</strong>
+                    <small>
+                      {profile.retrievers.map((retriever) => retriever.mode).join(" + ")}
+                    </small>
+                  </button>
+                ))}
+              </div>
               <label className="toggleRow">
                 <input
                   checked={selfCorrectiveEnabled}
@@ -476,10 +569,23 @@ export function WorkspaceApp() {
                 Self-Corrective RAG
               </label>
               <div className="profileRows">
-                <span>BM25 Top 5</span>
-                <span>Vector Top 5</span>
+                {activeRetrievers.map((retriever) => (
+                  <span key={`${retriever.mode}-${retriever.top_k}`}>
+                    {retriever.mode.toUpperCase()} Top {retriever.top_k}
+                  </span>
+                ))}
                 <span>Deduplicate chunks</span>
                 <span>{selfCorrectiveEnabled ? "Correction on" : "Correction off"}</span>
+              </div>
+              <div className="profileSave">
+                <input
+                  aria-label="Profile name"
+                  onChange={(event) => setProfileName(event.target.value)}
+                  value={profileName}
+                />
+                <button disabled={isBusy || !profileName.trim()} onClick={() => void createSearchProfile()} type="button">
+                  Save
+                </button>
               </div>
             </section>
 
