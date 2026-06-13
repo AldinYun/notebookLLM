@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
@@ -14,6 +15,13 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         docs_url="/docs",
         openapi_url="/openapi.json",
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(settings.cors_origins),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     app.include_router(notebooks_router, prefix="/notebooks", tags=["notebooks"])
     app.include_router(documents_router, prefix="/documents", tags=["documents"])
