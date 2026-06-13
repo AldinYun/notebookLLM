@@ -105,6 +105,7 @@ class CitationResponse(BaseModel):
 class RagRunResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    rag_execution_id: str
     question: str
     standalone_query: str
     answer: str
@@ -113,3 +114,8 @@ class RagRunResponse(BaseModel):
     self_corrective_enabled: bool
     excluded_chunk_ids: list[str]
     elapsed_ms: float
+
+
+class RagExecutionResponse(RagRunResponse):
+    notebook_id: str
+    created_at: datetime

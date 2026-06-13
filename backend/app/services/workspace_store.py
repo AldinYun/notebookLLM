@@ -84,6 +84,20 @@ class WorkspaceStore:
                     embedded_at TEXT
                 );
 
+                CREATE TABLE IF NOT EXISTS rag_executions (
+                    rag_execution_id TEXT PRIMARY KEY,
+                    notebook_id TEXT NOT NULL REFERENCES notebooks(notebook_id) ON DELETE CASCADE,
+                    question TEXT NOT NULL,
+                    standalone_query TEXT NOT NULL,
+                    answer TEXT NOT NULL,
+                    citations_json TEXT NOT NULL,
+                    search_json TEXT NOT NULL,
+                    self_corrective_enabled INTEGER NOT NULL,
+                    excluded_chunk_ids_json TEXT NOT NULL,
+                    elapsed_ms REAL NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_documents_notebook_id
                     ON documents(notebook_id);
 
@@ -92,6 +106,9 @@ class WorkspaceStore:
 
                 CREATE INDEX IF NOT EXISTS idx_chunks_document_id
                     ON chunks(document_id);
+
+                CREATE INDEX IF NOT EXISTS idx_rag_executions_notebook_id
+                    ON rag_executions(notebook_id);
                 """
             )
             connection.commit()
@@ -253,10 +270,79 @@ class WorkspaceStore:
             ).fetchall()
         return [self._chunk_from_row(row) for row in rows]
 
+    def add_rag_execution(
+        self,
+        rag_execution_id: str,
+        notebook_id: str,
+        question: str,
+        standalone_query: str,
+        answer: str,
+        citations: list[dict],
+        search: dict,
+        self_corrective_enabled: bool,
+        excluded_chunk_ids: list[str],
+        elapsed_ms: float,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO rag_executions (
+                    rag_execution_id,
+                    notebook_id,
+                    question,
+                    standalone_query,
+                    answer,
+                    citations_json,
+                    search_json,
+                    self_corrective_enabled,
+                    excluded_chunk_ids_json,
+                    elapsed_ms,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    rag_execution_id,
+                    notebook_id,
+                    question,
+                    standalone_query,
+                    answer,
+                    json.dumps(citations),
+                    json.dumps(search),
+                    1 if self_corrective_enabled else 0,
+                    json.dumps(excluded_chunk_ids),
+                    elapsed_ms,
+                    _serialize_datetime(utc_now()),
+                ),
+            )
+            connection.commit()
+
+    def list_rag_executions(self, notebook_id: str) -> list[dict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM rag_executions
+                WHERE notebook_id = ?
+                ORDER BY created_at DESC
+                """,
+                (notebook_id,),
+            ).fetchall()
+        return [self._rag_execution_from_row(row) for row in rows]
+
+    def get_rag_execution(self, rag_execution_id: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM rag_executions WHERE rag_execution_id = ?",
+                (rag_execution_id,),
+            ).fetchone()
+        return self._rag_execution_from_row(row) if row is not None else None
+
     def reset(self) -> None:
         with self._connect() as connection:
             connection.executescript(
                 """
+                DELETE FROM rag_executions;
                 DELETE FROM chunks;
                 DELETE FROM documents;
                 DELETE FROM notebooks;
@@ -300,6 +386,21 @@ class WorkspaceStore:
             metadata=json.loads(row["metadata_json"]),
             embedded_at=_parse_datetime(row["embedded_at"]) if row["embedded_at"] else None,
         )
+
+    def _rag_execution_from_row(self, row: sqlite3.Row) -> dict:
+        return {
+            "rag_execution_id": row["rag_execution_id"],
+            "notebook_id": row["notebook_id"],
+            "question": row["question"],
+            "standalone_query": row["standalone_query"],
+            "answer": row["answer"],
+            "citations": json.loads(row["citations_json"]),
+            "search": json.loads(row["search_json"]),
+            "self_corrective_enabled": bool(row["self_corrective_enabled"]),
+            "excluded_chunk_ids": json.loads(row["excluded_chunk_ids_json"]),
+            "elapsed_ms": float(row["elapsed_ms"]),
+            "created_at": _parse_datetime(row["created_at"]),
+        }
 
 
 workspace_store = WorkspaceStore()

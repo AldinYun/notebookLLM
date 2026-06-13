@@ -63,6 +63,7 @@ type Citation = {
 };
 
 type RagResponse = {
+  rag_execution_id: string;
   question: string;
   standalone_query: string;
   answer: string;
@@ -71,6 +72,11 @@ type RagResponse = {
   self_corrective_enabled: boolean;
   excluded_chunk_ids: string[];
   elapsed_ms: number;
+};
+
+type RagExecution = RagResponse & {
+  notebook_id: string;
+  created_at: string;
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -135,6 +141,7 @@ export function WorkspaceApp() {
   const [selfCorrectiveEnabled, setSelfCorrectiveEnabled] = useState(true);
   const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
   const [ragResult, setRagResult] = useState<RagResponse | null>(null);
+  const [ragExecutions, setRagExecutions] = useState<RagExecution[]>([]);
   const [statusMessage, setStatusMessage] = useState("Ready");
   const [isBusy, setIsBusy] = useState(false);
 
@@ -165,10 +172,24 @@ export function WorkspaceApp() {
       setDocuments(nextDocuments);
       const fallbackNotebookId = nextNotebookId || selectedNotebookId || nextNotebooks[0]?.notebook_id || "";
       setSelectedNotebookId(fallbackNotebookId);
+      if (fallbackNotebookId) {
+        await refreshRagExecutions(fallbackNotebookId);
+      }
       setStatusMessage(`Connected to ${API_BASE_URL}`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not connect to backend API");
     }
+  }
+
+  async function refreshRagExecutions(notebookId = selectedNotebookId) {
+    if (!notebookId) {
+      setRagExecutions([]);
+      return;
+    }
+    const executions = await requestJson<RagExecution[]>(
+      `/rag/executions?notebook_id=${encodeURIComponent(notebookId)}`
+    );
+    setRagExecutions(executions);
   }
 
   async function createNotebook(event: FormEvent<HTMLFormElement>) {
@@ -267,7 +288,10 @@ export function WorkspaceApp() {
       });
       setRagResult(result);
       setSearchResult(result.search);
-      setStatusMessage(`RAG prepared ${result.citations.length} citations`);
+      await refreshRagExecutions(selectedNotebookId);
+      setStatusMessage(
+        `RAG ${result.rag_execution_id} prepared ${result.citations.length} citations`
+      );
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "RAG run failed");
     } finally {
@@ -321,7 +345,10 @@ export function WorkspaceApp() {
                 <button
                   className={`notebookItem ${notebook.notebook_id === selectedNotebookId ? "active" : ""}`}
                   key={notebook.notebook_id}
-                  onClick={() => setSelectedNotebookId(notebook.notebook_id)}
+                  onClick={() => {
+                    setSelectedNotebookId(notebook.notebook_id);
+                    void refreshRagExecutions(notebook.notebook_id);
+                  }}
                   type="button"
                 >
                   <FileText aria-hidden="true" size={18} />
@@ -479,6 +506,31 @@ export function WorkspaceApp() {
                   {ragResult ? `${ragResult.citations.length} citations prepared` : "No citations yet"}
                 </li>
               </ol>
+            </section>
+
+            <section className="statusPanel">
+              <div className="statusTitle">
+                <Gauge aria-hidden="true" size={20} />
+                <h2>Recent Runs</h2>
+              </div>
+              <div className="runList">
+                {ragExecutions.slice(0, 5).map((execution) => (
+                  <button
+                    className="runItem"
+                    key={execution.rag_execution_id}
+                    onClick={() => {
+                      setRagResult(execution);
+                      setSearchResult(execution.search);
+                    }}
+                    type="button"
+                  >
+                    <strong>{execution.rag_execution_id}</strong>
+                    <span>{execution.citations.length} citations</span>
+                    <small>{execution.question}</small>
+                  </button>
+                ))}
+                {ragExecutions.length === 0 && <p className="emptyState">No RAG runs recorded yet.</p>}
+              </div>
             </section>
 
             <section className="statusPanel emphasis">

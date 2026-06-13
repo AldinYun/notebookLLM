@@ -428,6 +428,34 @@ small {
   color: var(--accent);
 }
 
+.runList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.runItem {
+  align-items: flex-start;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  min-height: 72px;
+  padding: 12px;
+  text-align: left;
+}
+
+.runItem span {
+  color: var(--accent-dark);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.runItem small {
+  line-height: 1.35;
+}
+
 .emphasis {
   background: #fff7ed;
   border-color: #fed7aa;

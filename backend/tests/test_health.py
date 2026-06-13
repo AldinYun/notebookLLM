@@ -60,7 +60,17 @@ def test_text_ingestion_search_and_rag_flow() -> None:
         },
     )
     assert rag_response.status_code == 200
-    assert "answer" in rag_response.json()
+    rag_payload = rag_response.json()
+    assert "answer" in rag_payload
+    assert rag_payload["rag_execution_id"].startswith("rag_")
+
+    history_response = client.get(f"/rag/executions?notebook_id={notebook_id}")
+    assert history_response.status_code == 200
+    assert history_response.json()[0]["rag_execution_id"] == rag_payload["rag_execution_id"]
+
+    execution_response = client.get(f"/rag/executions/{rag_payload['rag_execution_id']}")
+    assert execution_response.status_code == 200
+    assert execution_response.json()["question"] == "How does retrieval work?"
 
 
 def test_workspace_store_persists_documents(tmp_path) -> None:

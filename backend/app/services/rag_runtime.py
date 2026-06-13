@@ -1,12 +1,15 @@
 from dataclasses import dataclass
 from time import perf_counter
+from uuid import uuid4
 
 from app.api.schemas import CitationResponse, RagRunRequest, SearchRequest
 from app.services.search_service import SearchResult, search_service
+from app.services.workspace_store import workspace_store
 
 
 @dataclass(frozen=True)
 class RagRunResult:
+    rag_execution_id: str
     question: str
     standalone_query: str
     answer: str
@@ -20,6 +23,7 @@ class RagRunResult:
 class RagRuntime:
     def run(self, request: RagRunRequest) -> RagRunResult:
         started_at = perf_counter()
+        rag_execution_id = f"rag_{uuid4().hex[:12]}"
         standalone_query = request.question.strip()
         search_result = search_service.search(
             SearchRequest(
@@ -56,8 +60,9 @@ class RagRuntime:
         ]
 
         answer = self._compose_answer(request.question, citations)
-        elapsed_ms = (perf_counter() - started_at) * 1000
-        return RagRunResult(
+        elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
+        result = RagRunResult(
+            rag_execution_id=rag_execution_id,
             question=request.question,
             standalone_query=standalone_query,
             answer=answer,
@@ -65,23 +70,40 @@ class RagRuntime:
             search=search_result,
             self_corrective_enabled=request.self_corrective_enabled,
             excluded_chunk_ids=excluded_chunk_ids,
-            elapsed_ms=round(elapsed_ms, 2),
+            elapsed_ms=elapsed_ms,
         )
+        workspace_store.add_rag_execution(
+            rag_execution_id=rag_execution_id,
+            notebook_id=request.notebook_id,
+            question=request.question,
+            standalone_query=standalone_query,
+            answer=answer,
+            citations=[citation.model_dump() for citation in citations],
+            search={
+                "query": search_result.query,
+                "elapsed_ms": search_result.elapsed_ms,
+                "retriever_summaries": search_result.retriever_summaries,
+                "hits": [hit.__dict__ for hit in search_result.hits],
+            },
+            self_corrective_enabled=request.self_corrective_enabled,
+            excluded_chunk_ids=excluded_chunk_ids,
+            elapsed_ms=elapsed_ms,
+        )
+        return result
 
     def _compose_answer(self, question: str, citations: list[CitationResponse]) -> str:
         if not citations:
             return (
-                "업로드된 문서에서 질문과 직접 연결되는 근거를 찾지 못했습니다. "
-                "문서를 추가하거나 검색 프로필을 넓혀 다시 시도하세요."
+                "No directly relevant evidence was found in the indexed documents. "
+                "Add documents or broaden the retrieval profile and try again."
             )
 
         citation_list = ", ".join(citation.citation_id for citation in citations[:3])
         return (
-            f"질문 '{question}'에 대해 현재 문서 근거 기준으로 답변 초안을 생성했습니다. "
-            f"핵심 근거는 {citation_list}에서 확인할 수 있으며, 실제 LLM 연결 전까지는 "
-            "검색된 청크와 사이테이션 구성을 검증하기 위한 플레이스홀더 응답입니다."
+            f"Draft answer for '{question}' was generated from the current retrieved evidence. "
+            f"Primary support is available in {citation_list}. This is a placeholder response "
+            "until a real LLM model connection is configured."
         )
 
 
 rag_runtime = RagRuntime()
-
