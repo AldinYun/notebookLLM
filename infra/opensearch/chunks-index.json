@@ -1,0 +1,60 @@
+{
+  "settings": {
+    "index": {
+      "knn": true
+    },
+    "analysis": {
+      "analyzer": {
+        "content_analyzer": {
+          "type": "standard"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "tenant_id": { "type": "keyword" },
+      "workspace_id": { "type": "keyword" },
+      "notebook_id": { "type": "keyword" },
+      "document_id": { "type": "keyword" },
+      "chunk_id": { "type": "keyword" },
+      "parent_chunk_id": { "type": "keyword" },
+      "source_id": { "type": "keyword" },
+      "file_name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "document_title": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "tags": { "type": "keyword" },
+      "content": { "type": "text", "analyzer": "content_analyzer" },
+      "content_normalized": { "type": "text", "analyzer": "content_analyzer" },
+      "content_type": { "type": "keyword" },
+      "section_title": { "type": "text" },
+      "section_path": { "type": "keyword" },
+      "page_start": { "type": "integer" },
+      "page_end": { "type": "integer" },
+      "chunk_order": { "type": "integer" },
+      "bounding_boxes": { "type": "object", "enabled": true },
+      "parser_name": { "type": "keyword" },
+      "parser_version": { "type": "keyword" },
+      "ocr_applied": { "type": "boolean" },
+      "ocr_confidence": { "type": "float" },
+      "embedding": {
+        "type": "knn_vector",
+        "dimension": 1536,
+        "method": {
+          "name": "hnsw",
+          "space_type": "cosinesimil",
+          "engine": "faiss"
+        }
+      },
+      "embedding_model": { "type": "keyword" },
+      "embedding_dimension": { "type": "integer" },
+      "embedding_version": { "type": "keyword" },
+      "keywords": { "type": "keyword" },
+      "named_entities": { "type": "keyword" },
+      "questions": { "type": "text" },
+      "chunk_summary": { "type": "text" },
+      "access_scope": { "type": "keyword" },
+      "is_active": { "type": "boolean" }
+    }
+  }
+}
+
