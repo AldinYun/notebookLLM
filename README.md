@@ -37,9 +37,38 @@ docs/      Product requirements and architecture notes
 
 ## Local Development
 
-This initial commit is a scaffold. The next implementation step is choosing concrete package versions and installing dependencies.
+Start local infrastructure:
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d
 ```
 
+Run the backend:
+
+```bash
+cd backend
+python -m uvicorn app.main:app --reload
+```
+
+Run the frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## Implemented MVP Slice
+
+The current backend includes an in-memory flow for validating the product loop before persistence and OpenSearch are wired in:
+
+- `POST /notebooks`
+- `GET /notebooks`
+- `POST /documents/ingest-text`
+- `GET /documents`
+- `POST /search`
+- `POST /rag/run`
+
+This slice supports text ingestion, paragraph chunking, BM25-like search, vector-like search, hybrid scoring, deduped RAG context selection, Self-Corrective toggle plumbing, placeholder answer generation, and citation payloads.
+
+The frontend currently renders the first workspace view for notebook selection, document status, retrieval comparison, RAG profile settings, and run traces.

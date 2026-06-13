@@ -24,15 +24,28 @@ body {
 }
 
 button {
+  align-items: center;
+  background: var(--accent);
   border: 0;
   border-radius: 6px;
-  background: var(--accent);
   color: white;
   cursor: pointer;
+  display: inline-flex;
   font: inherit;
   font-weight: 700;
+  gap: 8px;
+  justify-content: center;
   min-height: 42px;
   padding: 0 18px;
+}
+
+input {
+  border: 0;
+  color: var(--ink);
+  flex: 1;
+  font: inherit;
+  min-width: 0;
+  outline: 0;
 }
 
 .shell {
@@ -42,7 +55,7 @@ button {
 
 .workspace {
   margin: 0 auto;
-  max-width: 1180px;
+  max-width: 1320px;
 }
 
 .toolbar {
@@ -51,6 +64,17 @@ button {
   gap: 24px;
   justify-content: space-between;
   margin-bottom: 24px;
+}
+
+.toolbarActions {
+  display: flex;
+  gap: 10px;
+}
+
+.secondaryButton {
+  background: white;
+  border: 1px solid var(--line);
+  color: var(--ink);
 }
 
 .eyebrow {
@@ -75,64 +99,256 @@ h1 {
   margin-bottom: 0;
 }
 
-h2 {
-  font-size: 2rem;
-  line-height: 1.15;
-  margin-bottom: 14px;
-}
-
-h3 {
-  font-size: 1rem;
-  margin-bottom: 8px;
-}
-
-.grid {
+.appGrid {
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(0, 1fr) 190px 190px;
+  grid-template-columns: 280px minmax(0, 1fr) 300px;
   margin-bottom: 16px;
 }
 
-.panel,
-.workflow {
+.workflow,
+.sidebar,
+.mainPanel,
+.statusPanel {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
 }
 
-.panel {
-  min-height: 168px;
+.sidebar,
+.mainPanel {
   padding: 24px;
 }
 
-.primary {
-  align-items: end;
-  background:
-    linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(29, 78, 216, 0.08)),
-    var(--panel);
+.sectionHeader,
+.resultsHeader,
+.statusTitle,
+.resultMeta,
+.documentRow,
+.retrieverCard {
+  align-items: center;
   display: flex;
 }
 
-.primary p {
-  color: #475467;
-  line-height: 1.65;
-  max-width: 760px;
+.sectionHeader,
+.resultsHeader {
+  justify-content: space-between;
+  margin-bottom: 16px;
 }
 
-.compact {
+.sectionHeader h2,
+.statusTitle h2,
+.resultsHeader h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.sectionHeader span,
+.resultsHeader span,
+.documentRow span,
+.retrieverCard span,
+.resultMeta span,
+small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.notebookList {
   display: flex;
   flex-direction: column;
+  gap: 8px;
+  margin-bottom: 28px;
+}
+
+.notebookItem {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink);
+  justify-content: flex-start;
+  min-height: 68px;
+  padding: 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.notebookItem.active {
+  background: #ecfdf5;
+  border-color: #99f6e4;
+  color: var(--accent-dark);
+}
+
+.notebookItem span,
+.documentRow div,
+.retrieverCard div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.documents {
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+
+.documentRow {
+  border-bottom: 1px solid var(--line);
+  gap: 12px;
   justify-content: space-between;
+  padding: 13px 0;
+}
+
+.mainPanel {
+  min-width: 0;
+}
+
+.queryBar {
+  align-items: center;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  min-height: 58px;
+  padding: 8px 8px 8px 16px;
+}
+
+.queryBar svg {
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.retrieverGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 16px 0 24px;
+}
+
+.retrieverCard {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  justify-content: space-between;
+  min-height: 92px;
+  padding: 16px;
+}
+
+.retrieverCard p {
+  color: var(--blue);
+  font-size: 2rem;
+  font-weight: 850;
+  line-height: 1;
+  margin: 0;
+}
+
+.resultList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.resultItem {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  padding: 16px;
+}
+
+.rank {
+  align-items: center;
+  background: #eff6ff;
+  border-radius: 6px;
+  color: var(--blue);
+  display: flex;
+  font-weight: 850;
+  height: 34px;
+  justify-content: center;
+}
+
+.resultMeta {
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.resultItem p {
+  color: #475467;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.rightRail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.statusPanel {
+  padding: 20px;
+}
+
+.statusTitle {
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.statusTitle svg {
+  color: var(--accent);
+}
+
+.profileRows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profileRows span {
+  background: #f2f4f7;
+  border-radius: 999px;
+  color: #344054;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 8px 10px;
+}
+
+.traceList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.traceList li {
+  align-items: center;
+  color: #344054;
+  display: flex;
+  font-size: 0.92rem;
+  font-weight: 700;
+  gap: 8px;
+}
+
+.traceList svg {
+  color: var(--accent);
+}
+
+.emphasis {
+  background: #fff7ed;
+  border-color: #fed7aa;
 }
 
 .metric {
-  color: var(--blue);
-  font-size: 3rem;
+  color: var(--amber);
+  font-size: 2.6rem;
   font-weight: 850;
   line-height: 1;
+  margin-bottom: 6px;
 }
 
-.compact span {
+.emphasis span {
   color: var(--muted);
   font-weight: 700;
 }
@@ -144,7 +360,7 @@ h3 {
 }
 
 .workflow {
-  min-height: 190px;
+  min-height: 178px;
   padding: 20px;
 }
 
@@ -153,10 +369,27 @@ h3 {
   margin-bottom: 18px;
 }
 
+.workflow h3 {
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
 .workflow p {
   color: var(--muted);
   font-size: 0.94rem;
   line-height: 1.55;
+}
+
+@media (max-width: 1100px) {
+  .appGrid {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  .rightRail {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: grid;
+  }
 }
 
 @media (max-width: 900px) {
@@ -169,9 +402,18 @@ h3 {
     flex-direction: column;
   }
 
-  .grid,
+  .appGrid,
+  .retrieverGrid,
+  .rightRail,
   .workflowGrid {
     grid-template-columns: 1fr;
   }
-}
 
+  .toolbarActions {
+    width: 100%;
+  }
+
+  .toolbarActions button {
+    flex: 1;
+  }
+}
