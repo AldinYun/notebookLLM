@@ -72,3 +72,9 @@ The current backend includes an in-memory flow for validating the product loop b
 This slice supports text ingestion, paragraph chunking, BM25-like search, vector-like search, hybrid scoring, deduped RAG context selection, Self-Corrective toggle plumbing, placeholder answer generation, and citation payloads.
 
 The frontend currently renders the first workspace view for notebook selection, document status, retrieval comparison, RAG profile settings, and run traces.
+
+Local MVP data is stored in SQLite at `backend/.data/insight.db` by default. Override it with:
+
+```bash
+INSIGHT_SQLITE_PATH=/path/to/insight.db
+```

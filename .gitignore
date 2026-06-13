@@ -17,9 +17,12 @@ dist/
 coverage/
 
 *.log
+*.db
+*.db-shm
+*.db-wal
 .DS_Store
 Thumbs.db
 
 outputs/
 work/
-
+backend/.data/
