@@ -20,6 +20,20 @@ def test_health_check() -> None:
 def test_text_ingestion_search_and_rag_flow() -> None:
     client = TestClient(create_app())
 
+    model_response = client.post(
+        "/models/connections",
+        json={
+            "name": "Local vLLM",
+            "provider": "openai-compatible",
+            "base_url": "http://localhost:8001/v1",
+            "model_id": "local-model",
+            "api_key": "sk-test-secret",
+            "capabilities": ["chat", "embedding"],
+        },
+    )
+    assert model_response.status_code == 201
+    assert model_response.json()["api_key_hint"] == "sk-...cret"
+
     notebook_response = client.post(
         "/notebooks",
         json={"title": "MVP Research", "description": "NotebookLM style requirements"},

@@ -109,6 +109,19 @@ class WorkspaceStore:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS model_connections (
+                    connection_id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    base_url TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    api_key_hint TEXT NOT NULL,
+                    capabilities_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_documents_notebook_id
                     ON documents(notebook_id);
 
@@ -123,6 +136,9 @@ class WorkspaceStore:
 
                 CREATE INDEX IF NOT EXISTS idx_search_profiles_notebook_id
                     ON search_profiles(notebook_id);
+
+                CREATE INDEX IF NOT EXISTS idx_model_connections_workspace_id
+                    ON model_connections(workspace_id);
                 """
             )
             connection.commit()
@@ -416,10 +432,81 @@ class WorkspaceStore:
             ).fetchone()
         return self._search_profile_from_row(row) if row is not None else None
 
+    def create_model_connection(
+        self,
+        workspace_id: str,
+        name: str,
+        provider: str,
+        base_url: str,
+        model_id: str,
+        api_key: str,
+        capabilities: list[str],
+    ) -> dict:
+        now = utc_now()
+        connection_id = f"mc_{uuid4().hex[:12]}"
+        api_key_hint = self._api_key_hint(api_key)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO model_connections (
+                    connection_id,
+                    workspace_id,
+                    name,
+                    provider,
+                    base_url,
+                    model_id,
+                    api_key_hint,
+                    capabilities_json,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    connection_id,
+                    workspace_id,
+                    name,
+                    provider,
+                    base_url,
+                    model_id,
+                    api_key_hint,
+                    json.dumps(capabilities),
+                    _serialize_datetime(now),
+                    _serialize_datetime(now),
+                ),
+            )
+            connection.commit()
+        model_connection = self.get_model_connection(connection_id)
+        if model_connection is None:
+            raise RuntimeError("Model connection was not persisted")
+        return model_connection
+
+    def list_model_connections(self, workspace_id: str = "default") -> list[dict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM model_connections
+                WHERE workspace_id = ?
+                ORDER BY created_at ASC
+                """,
+                (workspace_id,),
+            ).fetchall()
+        return [self._model_connection_from_row(row) for row in rows]
+
+    def get_model_connection(self, connection_id: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM model_connections WHERE connection_id = ?",
+                (connection_id,),
+            ).fetchone()
+        return self._model_connection_from_row(row) if row is not None else None
+
     def reset(self) -> None:
         with self._connect() as connection:
             connection.executescript(
                 """
+                DELETE FROM model_connections;
                 DELETE FROM rag_executions;
                 DELETE FROM search_profiles;
                 DELETE FROM chunks;
@@ -492,6 +579,27 @@ class WorkspaceStore:
             "created_at": _parse_datetime(row["created_at"]),
             "updated_at": _parse_datetime(row["updated_at"]),
         }
+
+    def _model_connection_from_row(self, row: sqlite3.Row) -> dict:
+        return {
+            "connection_id": row["connection_id"],
+            "workspace_id": row["workspace_id"],
+            "name": row["name"],
+            "provider": row["provider"],
+            "base_url": row["base_url"],
+            "model_id": row["model_id"],
+            "api_key_hint": row["api_key_hint"],
+            "capabilities": json.loads(row["capabilities_json"]),
+            "created_at": _parse_datetime(row["created_at"]),
+            "updated_at": _parse_datetime(row["updated_at"]),
+        }
+
+    def _api_key_hint(self, api_key: str) -> str:
+        if not api_key:
+            return "not-set"
+        if len(api_key) <= 8:
+            return "*" * len(api_key)
+        return f"{api_key[:3]}...{api_key[-4:]}"
 
     def _insert_default_search_profiles(
         self,

@@ -94,6 +94,16 @@ type SearchProfile = {
   final_context_limit: number;
 };
 
+type ModelConnection = {
+  connection_id: string;
+  name: string;
+  provider: string;
+  base_url: string;
+  model_id: string;
+  api_key_hint: string;
+  capabilities: string[];
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const defaultRetrievers: RetrieverConfig[] = [
@@ -157,6 +167,11 @@ export function WorkspaceApp() {
   const [searchProfiles, setSearchProfiles] = useState<SearchProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [profileName, setProfileName] = useState("Balanced Debug");
+  const [modelConnections, setModelConnections] = useState<ModelConnection[]>([]);
+  const [modelName, setModelName] = useState("Local vLLM");
+  const [modelBaseUrl, setModelBaseUrl] = useState("http://localhost:8001/v1");
+  const [modelId, setModelId] = useState("local-model");
+  const [apiKey, setApiKey] = useState("");
   const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
   const [ragResult, setRagResult] = useState<RagResponse | null>(null);
   const [ragExecutions, setRagExecutions] = useState<RagExecution[]>([]);
@@ -190,6 +205,7 @@ export function WorkspaceApp() {
         requestJson<Notebook[]>("/notebooks"),
         requestJson<DocumentItem[]>("/documents"),
       ]);
+      await refreshModelConnections();
       setNotebooks(nextNotebooks);
       setDocuments(nextDocuments);
       const fallbackNotebookId = nextNotebookId || selectedNotebookId || nextNotebooks[0]?.notebook_id || "";
@@ -229,6 +245,36 @@ export function WorkspaceApp() {
     setSelectedProfileId(nextProfile?.profile_id ?? "");
     if (nextProfile) {
       setSelfCorrectiveEnabled(nextProfile.self_corrective_enabled);
+    }
+  }
+
+  async function refreshModelConnections() {
+    const connections = await requestJson<ModelConnection[]>("/models/connections");
+    setModelConnections(connections);
+  }
+
+  async function createModelConnection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsBusy(true);
+    try {
+      const connection = await requestJson<ModelConnection>("/models/connections", {
+        method: "POST",
+        body: JSON.stringify({
+          name: modelName,
+          provider: "openai-compatible",
+          base_url: modelBaseUrl,
+          model_id: modelId,
+          api_key: apiKey,
+          capabilities: ["chat", "embedding"],
+        }),
+      });
+      setApiKey("");
+      await refreshModelConnections();
+      setStatusMessage(`Registered model connection ${connection.name}`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Model connection failed");
+    } finally {
+      setIsBusy(false);
     }
   }
 
@@ -537,6 +583,50 @@ export function WorkspaceApp() {
           </section>
 
           <aside className="rightRail">
+            <section className="statusPanel">
+              <div className="statusTitle">
+                <Settings2 aria-hidden="true" size={20} />
+                <h2>Models</h2>
+              </div>
+              <form className="modelForm" onSubmit={(event) => void createModelConnection(event)}>
+                <input
+                  aria-label="Model connection name"
+                  onChange={(event) => setModelName(event.target.value)}
+                  value={modelName}
+                />
+                <input
+                  aria-label="Model base URL"
+                  onChange={(event) => setModelBaseUrl(event.target.value)}
+                  value={modelBaseUrl}
+                />
+                <input
+                  aria-label="Model ID"
+                  onChange={(event) => setModelId(event.target.value)}
+                  value={modelId}
+                />
+                <input
+                  aria-label="API key"
+                  onChange={(event) => setApiKey(event.target.value)}
+                  placeholder="API key"
+                  type="password"
+                  value={apiKey}
+                />
+                <button disabled={isBusy || !modelName.trim() || !modelBaseUrl.trim() || !modelId.trim()} type="submit">
+                  Register
+                </button>
+              </form>
+              <div className="modelList">
+                {modelConnections.map((connection) => (
+                  <article key={connection.connection_id}>
+                    <strong>{connection.name}</strong>
+                    <span>{connection.model_id}</span>
+                    <small>{connection.api_key_hint}</small>
+                  </article>
+                ))}
+                {modelConnections.length === 0 && <p className="emptyState">No model connections yet.</p>}
+              </div>
+            </section>
+
             <section className="statusPanel">
               <div className="statusTitle">
                 <Bot aria-hidden="true" size={20} />

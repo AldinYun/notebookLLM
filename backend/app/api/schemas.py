@@ -138,3 +138,28 @@ class SearchProfileResponse(BaseModel):
     final_context_limit: int
     created_at: datetime
     updated_at: datetime
+
+
+class ModelConnectionCreate(BaseModel):
+    workspace_id: str = "default"
+    name: str = Field(min_length=1, max_length=120)
+    provider: str = Field(default="openai-compatible", min_length=1, max_length=80)
+    base_url: str = Field(min_length=1, max_length=500)
+    model_id: str = Field(min_length=1, max_length=160)
+    api_key: str = Field(default="", max_length=500)
+    capabilities: list[Literal["chat", "embedding", "evaluation"]] = Field(
+        default_factory=lambda: ["chat"]
+    )
+
+
+class ModelConnectionResponse(BaseModel):
+    connection_id: str
+    workspace_id: str
+    name: str
+    provider: str
+    base_url: str
+    model_id: str
+    api_key_hint: str
+    capabilities: list[str]
+    created_at: datetime
+    updated_at: datetime
