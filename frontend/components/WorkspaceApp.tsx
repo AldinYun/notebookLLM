@@ -352,8 +352,6 @@ export function WorkspaceApp() {
           retrievers: activeRetrievers,
           self_corrective_enabled: selfCorrectiveEnabled,
           final_context_limit: activeFinalContextLimit,
-          model_connection_id: selectedModelConnectionId || null,
-          model_api_key: runtimeApiKey,
         }),
       });
       await refreshSearchProfiles(selectedNotebookId);
@@ -539,28 +537,82 @@ export function WorkspaceApp() {
 
     setIsBusy(true);
     try {
-      const result = await requestJson<RagResponse>("/rag/run", {
+      const response = await fetch(`${API_BASE_URL}/rag/stream`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           notebook_id: selectedNotebookId,
           question: query,
-          retrievers: [
-            ...activeRetrievers.map((retriever) => ({
-              mode: retriever.mode,
-              top_k: retriever.top_k,
-              weight: retriever.weight,
-            })),
-          ],
+          retrievers: activeRetrievers.map((retriever) => ({
+            mode: retriever.mode,
+            top_k: retriever.top_k,
+            weight: retriever.weight,
+          })),
           self_corrective_enabled: selfCorrectiveEnabled,
           final_context_limit: activeFinalContextLimit,
+          model_connection_id: selectedModelConnectionId || null,
+          model_api_key: runtimeApiKey,
         }),
       });
-      setRagResult(result);
-      setSearchResult(result.search);
+      if (!response.ok || !response.body) {
+        throw new Error(await response.text());
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let currentResult: RagResponse | null = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+        const messages = buffer.split("\n\n");
+        buffer = messages.pop() ?? "";
+        for (const message of messages) {
+          const dataLine = message.split("\n").find((line) => line.startsWith("data:"));
+          if (!dataLine) continue;
+          const event = JSON.parse(dataLine.slice(5).trim()) as Record<string, unknown>;
+          if (event.event === "metadata") {
+            currentResult = {
+              rag_execution_id: String(event.rag_execution_id),
+              question: query,
+              standalone_query: String(event.standalone_query),
+              answer: "",
+              citations: event.citations as Citation[],
+              search: event.search as SearchResponse,
+              self_corrective_enabled: Boolean(event.self_corrective_enabled),
+              excluded_chunk_ids: event.excluded_chunk_ids as string[],
+              elapsed_ms: 0,
+              model_connection_id: (event.model_connection_id as string | null) ?? null,
+              generation_mode: event.generation_mode as "placeholder" | "model",
+            };
+            setRagResult(currentResult);
+            setSearchResult(currentResult.search);
+            setStatusMessage(`Streaming ${currentResult.rag_execution_id}`);
+          } else if (event.event === "token" && currentResult) {
+            const existingResult = currentResult as RagResponse;
+            currentResult = {
+              ...existingResult,
+              answer: existingResult.answer + String(event.content ?? ""),
+            };
+            setRagResult(currentResult);
+          } else if (event.event === "done" && currentResult) {
+            const existingResult = currentResult as RagResponse;
+            currentResult = {
+              ...existingResult,
+              answer: String(event.answer),
+              elapsed_ms: Number(event.elapsed_ms),
+            };
+            setRagResult(currentResult);
+            setStatusMessage(
+              `RAG ${currentResult.rag_execution_id} completed in ${currentResult.elapsed_ms} ms`
+            );
+          } else if (event.event === "error") {
+            throw new Error(String(event.detail ?? "RAG streaming failed"));
+          }
+        }
+        if (done) break;
+      }
       await refreshRagExecutions(selectedNotebookId);
-      setStatusMessage(
-        `RAG ${result.rag_execution_id} prepared ${result.citations.length} citations`
-      );
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "RAG run failed");
     } finally {

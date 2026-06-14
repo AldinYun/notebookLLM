@@ -1,4 +1,7 @@
+import json
+
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from app.api.schemas import RagExecutionResponse, RagRunRequest, RagRunResponse
 from app.services.rag_runtime import rag_runtime
@@ -18,6 +21,26 @@ async def run_rag(payload: RagRunRequest) -> RagRunResponse:
     except ModelGatewayError as error:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
     return RagRunResponse.model_validate(result)
+
+
+@router.post("/stream", response_class=StreamingResponse)
+async def stream_rag(payload: RagRunRequest) -> StreamingResponse:
+    if workspace_store.get_notebook(payload.notebook_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notebook not found")
+
+    def event_stream():
+        try:
+            for event in rag_runtime.stream(payload):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except ModelGatewayError as error:
+            event = {"event": "error", "detail": str(error)}
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/executions", response_model=list[RagExecutionResponse])
