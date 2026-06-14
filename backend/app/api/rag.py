@@ -20,6 +20,8 @@ async def run_rag(payload: RagRunRequest) -> RagRunResponse:
         result = rag_runtime.run(payload)
     except ModelGatewayError as error:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
     return RagRunResponse.model_validate(result)
 
 
@@ -27,6 +29,13 @@ async def run_rag(payload: RagRunRequest) -> RagRunResponse:
 async def stream_rag(payload: RagRunRequest) -> StreamingResponse:
     if workspace_store.get_notebook(payload.notebook_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notebook not found")
+    if payload.conversation_id is not None:
+        conversation = workspace_store.get_conversation(payload.conversation_id)
+        if conversation is None or conversation["notebook_id"] != payload.notebook_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Conversation not found in this notebook",
+            )
 
     def event_stream():
         try:

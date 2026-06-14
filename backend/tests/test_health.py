@@ -153,6 +153,45 @@ def test_self_corrective_rag_excludes_weak_candidates() -> None:
     assert history[0]["correction_evaluations"] == payload["correction_evaluations"]
 
 
+def test_rag_creates_and_continues_conversation() -> None:
+    client = TestClient(create_app())
+    notebook_id = client.post(
+        "/notebooks",
+        json={"title": "Conversation Notebook", "description": "chat history"},
+    ).json()["notebook_id"]
+
+    first = client.post(
+        "/rag/run",
+        json={"notebook_id": notebook_id, "question": "What is indexed?"},
+    )
+    assert first.status_code == 200
+    conversation_id = first.json()["conversation_id"]
+
+    second = client.post(
+        "/rag/run",
+        json={
+            "notebook_id": notebook_id,
+            "conversation_id": conversation_id,
+            "question": "Can you clarify?",
+        },
+    )
+    assert second.status_code == 200
+    assert second.json()["conversation_id"] == conversation_id
+
+    conversations = client.get(
+        f"/conversations?notebook_id={notebook_id}"
+    ).json()
+    assert conversations[0]["message_count"] == 4
+    messages = client.get(f"/conversations/{conversation_id}/messages").json()
+    assert [message["role"] for message in messages] == [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+    ]
+    assert messages[-1]["rag_execution_id"] == second.json()["rag_execution_id"]
+
+
 def test_file_upload_duplicate_detection_and_delete() -> None:
     client = TestClient(create_app())
     notebook_response = client.post(

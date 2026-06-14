@@ -85,6 +85,7 @@ type CorrectionEvaluation = {
 
 type RagResponse = {
   rag_execution_id: string;
+  conversation_id: string | null;
   question: string;
   standalone_query: string;
   answer: string;
@@ -120,6 +121,25 @@ type ModelConnection = {
   model_id: string;
   api_key_hint: string;
   capabilities: string[];
+};
+
+type Conversation = {
+  conversation_id: string;
+  notebook_id: string;
+  title: string;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+type ConversationMessage = {
+  message_id: string;
+  conversation_id: string;
+  role: "user" | "assistant";
+  content: string;
+  rag_execution_id: string | null;
+  citations: Citation[];
+  created_at: string;
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -196,6 +216,9 @@ export function WorkspaceApp() {
   const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
   const [ragResult, setRagResult] = useState<RagResponse | null>(null);
   const [ragExecutions, setRagExecutions] = useState<RagExecution[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConversationId, setSelectedConversationId] = useState("");
+  const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([]);
   const [statusMessage, setStatusMessage] = useState("Ready");
   const [isBusy, setIsBusy] = useState(false);
 
@@ -239,6 +262,7 @@ export function WorkspaceApp() {
       if (fallbackNotebookId) {
         await refreshSearchProfiles(fallbackNotebookId);
         await refreshRagExecutions(fallbackNotebookId);
+        await refreshConversations(fallbackNotebookId);
       }
       setStatusMessage(`Connected to ${API_BASE_URL}`);
     } catch (error) {
@@ -255,6 +279,40 @@ export function WorkspaceApp() {
       `/rag/executions?notebook_id=${encodeURIComponent(notebookId)}`
     );
     setRagExecutions(executions);
+  }
+
+  async function refreshConversations(notebookId = selectedNotebookId) {
+    if (!notebookId) {
+      setConversations([]);
+      return;
+    }
+    const nextConversations = await requestJson<Conversation[]>(
+      `/conversations?notebook_id=${encodeURIComponent(notebookId)}`
+    );
+    setConversations(nextConversations);
+  }
+
+  async function selectConversation(conversationId: string) {
+    setSelectedConversationId(conversationId);
+    const messages = await requestJson<ConversationMessage[]>(
+      `/conversations/${encodeURIComponent(conversationId)}/messages`
+    );
+    setConversationMessages(messages);
+    const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant");
+    const latestExecution = ragExecutions.find(
+      (execution) => execution.rag_execution_id === latestAssistant?.rag_execution_id
+    );
+    if (latestExecution) {
+      setRagResult(latestExecution);
+      setSearchResult(latestExecution.search);
+    }
+  }
+
+  function startConversation() {
+    setSelectedConversationId("");
+    setConversationMessages([]);
+    setRagResult(null);
+    setSearchResult(null);
   }
 
   async function refreshSearchProfiles(notebookId = selectedNotebookId) {
@@ -551,6 +609,7 @@ export function WorkspaceApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           notebook_id: selectedNotebookId,
+          conversation_id: selectedConversationId || null,
           question: query,
           retrievers: activeRetrievers.map((retriever) => ({
             mode: retriever.mode,
@@ -583,6 +642,7 @@ export function WorkspaceApp() {
           if (event.event === "metadata") {
             currentResult = {
               rag_execution_id: String(event.rag_execution_id),
+              conversation_id: String(event.conversation_id),
               question: query,
               standalone_query: String(event.standalone_query),
               answer: "",
@@ -597,6 +657,7 @@ export function WorkspaceApp() {
                 (event.correction_evaluations as CorrectionEvaluation[] | undefined) ?? [],
             };
             setRagResult(currentResult);
+            setSelectedConversationId(currentResult.conversation_id ?? "");
             setSearchResult(currentResult.search);
             setStatusMessage(`Streaming ${currentResult.rag_execution_id}`);
           } else if (event.event === "token" && currentResult) {
@@ -624,6 +685,10 @@ export function WorkspaceApp() {
         if (done) break;
       }
       await refreshRagExecutions(selectedNotebookId);
+      await refreshConversations(selectedNotebookId);
+      if (currentResult?.conversation_id) {
+        await selectConversation(currentResult.conversation_id);
+      }
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "RAG run failed");
     } finally {
@@ -684,8 +749,11 @@ export function WorkspaceApp() {
                       setSelectedNotebookId(notebook.notebook_id);
                       setSearchResult(null);
                       setRagResult(null);
+                      setSelectedConversationId("");
+                      setConversationMessages([]);
                       void refreshRagExecutions(notebook.notebook_id);
                       void refreshSearchProfiles(notebook.notebook_id);
+                      void refreshConversations(notebook.notebook_id);
                     }}
                     type="button"
                   >
@@ -709,6 +777,40 @@ export function WorkspaceApp() {
                   </button>
                 </div>
               ))}
+            </div>
+
+            <div className="conversations">
+              <div className="sectionHeader">
+                <h2>Conversations</h2>
+                <button
+                  aria-label="Start new conversation"
+                  className="iconButton secondaryButton"
+                  onClick={startConversation}
+                  title="New conversation"
+                  type="button"
+                >
+                  <FilePlus2 aria-hidden="true" size={15} />
+                </button>
+              </div>
+              <div className="conversationList">
+                {conversations.map((conversation) => (
+                  <button
+                    className={`conversationItem ${
+                      conversation.conversation_id === selectedConversationId ? "active" : ""
+                    }`}
+                    key={conversation.conversation_id}
+                    onClick={() => void selectConversation(conversation.conversation_id)}
+                    type="button"
+                  >
+                    <MessageSquareText aria-hidden="true" size={16} />
+                    <span>
+                      <strong>{conversation.title}</strong>
+                      <small>{conversation.message_count} messages</small>
+                    </span>
+                  </button>
+                ))}
+                {conversations.length === 0 && <p className="emptyState">No conversations yet.</p>}
+              </div>
             </div>
 
             <div className="documents">
@@ -758,6 +860,16 @@ export function WorkspaceApp() {
           </aside>
 
           <section className="mainPanel">
+            {conversationMessages.length > 0 && (
+              <section className="messageHistory" aria-label="Conversation history">
+                {conversationMessages.map((message) => (
+                  <article className={`messageBubble ${message.role}`} key={message.message_id}>
+                    <strong>{message.role === "user" ? "You" : "Assistant"}</strong>
+                    <p>{message.content}</p>
+                  </article>
+                ))}
+              </section>
+            )}
             <form className="uploadPanel" onSubmit={(event) => void uploadDocument(event)}>
               <label className="filePicker">
                 <Upload aria-hidden="true" size={20} />

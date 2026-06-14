@@ -12,6 +12,7 @@ from app.services.workspace_store import workspace_store
 @dataclass(frozen=True)
 class PreparedRag:
     rag_execution_id: str
+    conversation_id: str
     standalone_query: str
     search: SearchResult
     citations: list[CitationResponse]
@@ -22,6 +23,7 @@ class PreparedRag:
 @dataclass(frozen=True)
 class RagRunResult:
     rag_execution_id: str
+    conversation_id: str
     question: str
     standalone_query: str
     answer: str
@@ -56,6 +58,7 @@ class RagRuntime:
         self._save_execution(request, prepared, answer, elapsed_ms, generation_mode)
         return RagRunResult(
             rag_execution_id=prepared.rag_execution_id,
+            conversation_id=prepared.conversation_id,
             question=request.question,
             standalone_query=prepared.standalone_query,
             answer=answer,
@@ -77,6 +80,7 @@ class RagRuntime:
         yield {
             "event": "metadata",
             "rag_execution_id": prepared.rag_execution_id,
+            "conversation_id": prepared.conversation_id,
             "standalone_query": prepared.standalone_query,
             "citations": [citation.model_dump() for citation in prepared.citations],
             "search": self._search_payload(prepared.search),
@@ -119,6 +123,7 @@ class RagRuntime:
 
     def _prepare(self, request: RagRunRequest) -> PreparedRag:
         standalone_query = request.question.strip()
+        conversation_id = self._resolve_conversation(request)
         retrievers = request.retrievers
         if request.self_corrective_enabled:
             retrievers = [
@@ -186,6 +191,7 @@ class RagRuntime:
         ]
         return PreparedRag(
             rag_execution_id=f"rag_{uuid4().hex[:12]}",
+            conversation_id=conversation_id,
             standalone_query=standalone_query,
             search=search_result,
             citations=citations,
@@ -223,7 +229,17 @@ class RagRuntime:
             model_connection_id=request.model_connection_id,
             generation_mode=generation_mode,
             correction_evaluations=prepared.correction_evaluations,
+            conversation_id=prepared.conversation_id,
         )
+
+    def _resolve_conversation(self, request: RagRunRequest) -> str:
+        if request.conversation_id is None:
+            title = request.question.strip()[:120]
+            return workspace_store.create_conversation(request.notebook_id, title)["conversation_id"]
+        conversation = workspace_store.get_conversation(request.conversation_id)
+        if conversation is None or conversation["notebook_id"] != request.notebook_id:
+            raise ValueError("Conversation not found in this notebook")
+        return request.conversation_id
 
     def _search_payload(self, search_result: SearchResult) -> dict:
         return {

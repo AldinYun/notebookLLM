@@ -102,6 +102,25 @@ class WorkspaceStore:
                     model_connection_id TEXT,
                     generation_mode TEXT NOT NULL DEFAULT 'placeholder',
                     correction_evaluations_json TEXT NOT NULL DEFAULT '[]',
+                    conversation_id TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS conversations (
+                    conversation_id TEXT PRIMARY KEY,
+                    notebook_id TEXT NOT NULL REFERENCES notebooks(notebook_id) ON DELETE CASCADE,
+                    title TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS conversation_messages (
+                    message_id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    rag_execution_id TEXT,
+                    citations_json TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT NOT NULL
                 );
 
@@ -140,6 +159,12 @@ class WorkspaceStore:
 
                 CREATE INDEX IF NOT EXISTS idx_rag_executions_notebook_id
                     ON rag_executions(notebook_id);
+
+                CREATE INDEX IF NOT EXISTS idx_conversations_notebook_id
+                    ON conversations(notebook_id);
+
+                CREATE INDEX IF NOT EXISTS idx_conversation_messages_conversation_id
+                    ON conversation_messages(conversation_id);
 
                 CREATE INDEX IF NOT EXISTS idx_search_profiles_notebook_id
                     ON search_profiles(notebook_id);
@@ -359,7 +384,9 @@ class WorkspaceStore:
         model_connection_id: str | None,
         generation_mode: str,
         correction_evaluations: list[dict],
+        conversation_id: str,
     ) -> None:
+        now = utc_now()
         with self._connect() as connection:
             connection.execute(
                 """
@@ -377,9 +404,10 @@ class WorkspaceStore:
                     model_connection_id,
                     generation_mode,
                     correction_evaluations_json,
+                    conversation_id,
                     created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     rag_execution_id,
@@ -395,10 +423,121 @@ class WorkspaceStore:
                     model_connection_id,
                     generation_mode,
                     json.dumps(correction_evaluations),
-                    _serialize_datetime(utc_now()),
+                    conversation_id,
+                    _serialize_datetime(now),
+                ),
+            )
+            connection.executemany(
+                """
+                INSERT INTO conversation_messages (
+                    message_id, conversation_id, role, content,
+                    rag_execution_id, citations_json, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        f"msg_{uuid4().hex[:12]}",
+                        conversation_id,
+                        "user",
+                        question,
+                        rag_execution_id,
+                        "[]",
+                        _serialize_datetime(now),
+                    ),
+                    (
+                        f"msg_{uuid4().hex[:12]}",
+                        conversation_id,
+                        "assistant",
+                        answer,
+                        rag_execution_id,
+                        json.dumps(citations),
+                        _serialize_datetime(now),
+                    ),
+                ],
+            )
+            connection.execute(
+                "UPDATE conversations SET updated_at = ? WHERE conversation_id = ?",
+                (_serialize_datetime(now), conversation_id),
+            )
+            connection.commit()
+
+    def create_conversation(self, notebook_id: str, title: str) -> dict:
+        now = utc_now()
+        conversation_id = f"conv_{uuid4().hex[:12]}"
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO conversations (
+                    conversation_id, notebook_id, title, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    conversation_id,
+                    notebook_id,
+                    title,
+                    _serialize_datetime(now),
+                    _serialize_datetime(now),
                 ),
             )
             connection.commit()
+        conversation = self.get_conversation(conversation_id)
+        if conversation is None:
+            raise RuntimeError("Conversation was not persisted")
+        return conversation
+
+    def list_conversations(self, notebook_id: str) -> list[dict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT conversations.*, COUNT(conversation_messages.message_id) AS message_count
+                FROM conversations
+                LEFT JOIN conversation_messages
+                    ON conversation_messages.conversation_id = conversations.conversation_id
+                WHERE conversations.notebook_id = ?
+                GROUP BY conversations.conversation_id
+                ORDER BY conversations.updated_at DESC
+                """,
+                (notebook_id,),
+            ).fetchall()
+        return [self._conversation_from_row(row) for row in rows]
+
+    def get_conversation(self, conversation_id: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT conversations.*, COUNT(conversation_messages.message_id) AS message_count
+                FROM conversations
+                LEFT JOIN conversation_messages
+                    ON conversation_messages.conversation_id = conversations.conversation_id
+                WHERE conversations.conversation_id = ?
+                GROUP BY conversations.conversation_id
+                """,
+                (conversation_id,),
+            ).fetchone()
+        return self._conversation_from_row(row) if row is not None else None
+
+    def list_conversation_messages(self, conversation_id: str) -> list[dict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM conversation_messages
+                WHERE conversation_id = ?
+                ORDER BY created_at ASC, rowid ASC
+                """,
+                (conversation_id,),
+            ).fetchall()
+        return [self._conversation_message_from_row(row) for row in rows]
+
+    def delete_conversation(self, conversation_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM conversations WHERE conversation_id = ?",
+                (conversation_id,),
+            )
+            connection.commit()
+        return cursor.rowcount > 0
 
     def list_rag_executions(self, notebook_id: str) -> list[dict]:
         with self._connect() as connection:
@@ -578,6 +717,8 @@ class WorkspaceStore:
                 """
                 DELETE FROM model_connections;
                 DELETE FROM rag_executions;
+                DELETE FROM conversation_messages;
+                DELETE FROM conversations;
                 DELETE FROM search_profiles;
                 DELETE FROM chunks;
                 DELETE FROM documents;
@@ -642,6 +783,28 @@ class WorkspaceStore:
             "model_connection_id": row["model_connection_id"],
             "generation_mode": row["generation_mode"],
             "correction_evaluations": json.loads(row["correction_evaluations_json"]),
+            "conversation_id": row["conversation_id"],
+            "created_at": _parse_datetime(row["created_at"]),
+        }
+
+    def _conversation_from_row(self, row: sqlite3.Row) -> dict:
+        return {
+            "conversation_id": row["conversation_id"],
+            "notebook_id": row["notebook_id"],
+            "title": row["title"],
+            "message_count": int(row["message_count"]),
+            "created_at": _parse_datetime(row["created_at"]),
+            "updated_at": _parse_datetime(row["updated_at"]),
+        }
+
+    def _conversation_message_from_row(self, row: sqlite3.Row) -> dict:
+        return {
+            "message_id": row["message_id"],
+            "conversation_id": row["conversation_id"],
+            "role": row["role"],
+            "content": row["content"],
+            "rag_execution_id": row["rag_execution_id"],
+            "citations": json.loads(row["citations_json"]),
             "created_at": _parse_datetime(row["created_at"]),
         }
 
@@ -708,6 +871,7 @@ class WorkspaceStore:
                 "ALTER TABLE rag_executions ADD COLUMN correction_evaluations_json TEXT NOT NULL "
                 "DEFAULT '[]'"
             ),
+            "conversation_id": "ALTER TABLE rag_executions ADD COLUMN conversation_id TEXT",
         }
         for column, statement in migrations.items():
             if column not in existing:

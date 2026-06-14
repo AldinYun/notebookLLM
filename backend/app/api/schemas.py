@@ -87,6 +87,7 @@ class SearchResponse(BaseModel):
 
 class RagRunRequest(BaseModel):
     notebook_id: str
+    conversation_id: str | None = None
     question: str = Field(min_length=1)
     retrievers: list[RetrieverRequest] = Field(
         default_factory=lambda: [
@@ -120,6 +121,7 @@ class RagRunResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     rag_execution_id: str
+    conversation_id: str | None
     question: str
     standalone_query: str
     answer: str
@@ -135,6 +137,30 @@ class RagRunResponse(BaseModel):
 
 class RagExecutionResponse(RagRunResponse):
     notebook_id: str
+    created_at: datetime
+
+
+class ConversationCreate(BaseModel):
+    notebook_id: str
+    title: str = Field(min_length=1, max_length=120)
+
+
+class ConversationResponse(BaseModel):
+    conversation_id: str
+    notebook_id: str
+    title: str
+    message_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationMessageResponse(BaseModel):
+    message_id: str
+    conversation_id: str
+    role: Literal["user", "assistant"]
+    content: str
+    rag_execution_id: str | None
+    citations: list[CitationResponse]
     created_at: datetime
 
 

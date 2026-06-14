@@ -248,6 +248,52 @@ small {
   padding-top: 20px;
 }
 
+.conversations {
+  border-top: 1px solid var(--line);
+  margin-bottom: 20px;
+  padding-top: 20px;
+}
+
+.conversationList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conversationItem {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink);
+  display: flex;
+  gap: 9px;
+  justify-content: flex-start;
+  min-height: 52px;
+  padding: 9px;
+  text-align: left;
+  width: 100%;
+}
+
+.conversationItem.active {
+  background: #eff8ff;
+  border-color: #b2ddff;
+  color: #175cd3;
+}
+
+.conversationItem span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.conversationItem strong,
+.conversationItem small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .documentRow {
   border-bottom: 1px solid var(--line);
   gap: 12px;
@@ -274,6 +320,45 @@ small {
 
 .mainPanel {
   min-width: 0;
+}
+
+.messageHistory {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 0 2px 16px;
+}
+
+.messageBubble {
+  align-self: flex-start;
+  background: #f2f4f7;
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  max-width: 86%;
+  padding: 11px 13px;
+}
+
+.messageBubble.user {
+  align-self: flex-end;
+  background: #ecfdf5;
+  border-color: #a6f4c5;
+}
+
+.messageBubble strong {
+  display: block;
+  font-size: 0.78rem;
+  margin-bottom: 5px;
+}
+
+.messageBubble p {
+  color: #344054;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .uploadPanel {
