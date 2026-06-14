@@ -268,6 +268,8 @@ def test_workspace_store_persists_documents(tmp_path) -> None:
 
 def test_openai_compatible_model_gateway() -> None:
     class Handler(BaseHTTPRequestHandler):
+        request_bodies: list[dict] = []
+
         def do_GET(self) -> None:
             body = json.dumps({"data": [{"id": "mock-model"}]}).encode()
             self.send_response(200)
@@ -277,7 +279,7 @@ def test_openai_compatible_model_gateway() -> None:
 
         def do_POST(self) -> None:
             length = int(self.headers.get("Content-Length", "0"))
-            json.loads(self.rfile.read(length) or b"{}")
+            self.request_bodies.append(json.loads(self.rfile.read(length) or b"{}"))
             body = json.dumps(
                 {"choices": [{"message": {"content": "Mock grounded answer [C1]"}}]}
             ).encode()
@@ -336,6 +338,27 @@ def test_openai_compatible_model_gateway() -> None:
         assert rag_response.status_code == 200
         assert rag_response.json()["generation_mode"] == "model"
         assert rag_response.json()["answer"] == "Mock grounded answer [C1]"
+
+        follow_up = client.post(
+            "/rag/run",
+            json={
+                "notebook_id": notebook_id,
+                "conversation_id": rag_response.json()["conversation_id"],
+                "question": "Can you expand on that?",
+                "model_connection_id": connection_id,
+                "retrievers": [{"mode": "bm25", "top_k": 5}],
+            },
+        )
+        assert follow_up.status_code == 200
+        follow_up_messages = Handler.request_bodies[-1]["messages"]
+        assert any(
+            message["role"] == "user" and "What supports the answer?" in message["content"]
+            for message in follow_up_messages
+        )
+        assert any(
+            message["role"] == "assistant" and message["content"] == "Mock grounded answer [C1]"
+            for message in follow_up_messages
+        )
     finally:
         server.shutdown()
         server.server_close()

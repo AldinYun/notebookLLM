@@ -42,11 +42,15 @@ class RagRuntime:
         started_at = perf_counter()
         prepared = self._prepare(request)
         connection = self._get_model_connection(request.model_connection_id)
+        conversation_history = workspace_store.list_conversation_messages(
+            prepared.conversation_id
+        )
         if connection is not None:
             answer = model_gateway.generate(
                 connection=connection,
                 question=request.question,
                 citations=[citation.model_dump() for citation in prepared.citations],
+                conversation_history=conversation_history,
                 api_key=request.model_api_key,
             )
             generation_mode = "model"
@@ -76,6 +80,9 @@ class RagRuntime:
         started_at = perf_counter()
         prepared = self._prepare(request)
         connection = self._get_model_connection(request.model_connection_id)
+        conversation_history = workspace_store.list_conversation_messages(
+            prepared.conversation_id
+        )
         generation_mode = "model" if connection is not None else "placeholder"
         yield {
             "event": "metadata",
@@ -98,6 +105,7 @@ class RagRuntime:
                     connection=connection,
                     question=request.question,
                     citations=[citation.model_dump() for citation in prepared.citations],
+                    conversation_history=conversation_history,
                     api_key=request.model_api_key,
                 )
             else:

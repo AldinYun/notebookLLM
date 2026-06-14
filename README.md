@@ -60,7 +60,7 @@ npm run dev
 
 ## Implemented MVP Slice
 
-The current backend includes an in-memory flow for validating the product loop before persistence and OpenSearch are wired in:
+The current backend includes a SQLite-backed local MVP for validating the complete document-to-chat loop before OpenSearch is wired in:
 
 - `POST /notebooks`
 - `GET /notebooks`
@@ -71,10 +71,16 @@ The current backend includes an in-memory flow for validating the product loop b
 - `DELETE /documents/{document_id}`
 - `POST /search`
 - `POST /rag/run`
+- `POST /rag/stream`
+- `GET /rag/executions`
+- `GET /conversations`
+- `GET /conversations/{conversation_id}/messages`
+- `POST /models/connections`
+- `POST /models/connections/{connection_id}/test`
 
-This slice supports text and file ingestion, local source storage, paragraph chunking, BM25-like search, vector-like search, hybrid scoring, deduped RAG context selection, Self-Corrective toggle plumbing, placeholder answer generation, and citation payloads. File parsing currently supports TXT, Markdown, CSV, TSV, JSON, XML, and HTML.
+This slice supports text and file ingestion, local source storage, paragraph chunking, BM25-like search, vector-like search, hybrid scoring, deduped RAG context selection, Self-Corrective candidate evaluation and replenishment, OpenAI-compatible model generation, SSE token streaming, persistent conversations, recent-message model context, and citation payloads. File parsing currently supports TXT, Markdown, CSV, TSV, JSON, XML, and HTML.
 
-The frontend currently renders the first workspace view for notebook selection, document status, retrieval comparison, RAG profile settings, and run traces.
+The frontend provides notebook and document management, retrieval comparison, saved RAG profiles, model connections, streamed answers, correction traces, run history, and persistent conversation selection.
 
 Local MVP data is stored in SQLite at `backend/.data/insight.db` by default. Override it with:
 

@@ -22,6 +22,7 @@ class ModelGateway:
         connection: dict,
         question: str,
         citations: list[dict],
+        conversation_history: list[dict] | None = None,
         api_key: str = "",
     ) -> str:
         evidence = "\n\n".join(
@@ -35,19 +36,7 @@ class ModelGateway:
             api_key=api_key,
             body={
                 "model": connection["model_id"],
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Answer only from the supplied evidence. Cite evidence using [C1], [C2], "
-                            "and say when evidence is insufficient."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Question: {question}\n\nEvidence:\n{evidence}",
-                    },
-                ],
+                "messages": self._messages(question, evidence, conversation_history),
                 "temperature": 0.1,
                 "stream": False,
             },
@@ -62,6 +51,7 @@ class ModelGateway:
         connection: dict,
         question: str,
         citations: list[dict],
+        conversation_history: list[dict] | None = None,
         api_key: str = "",
     ) -> Iterator[str]:
         evidence = "\n\n".join(
@@ -75,19 +65,7 @@ class ModelGateway:
         body = json.dumps(
             {
                 "model": connection["model_id"],
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Answer only from the supplied evidence. Cite evidence using [C1], [C2], "
-                            "and say when evidence is insufficient."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Question: {question}\n\nEvidence:\n{evidence}",
-                    },
-                ],
+                "messages": self._messages(question, evidence, conversation_history),
                 "temperature": 0.1,
                 "stream": True,
             }
@@ -116,6 +94,32 @@ class ModelGateway:
             raise ModelGatewayError(f"Model endpoint returned HTTP {error.code}: {detail}") from error
         except (URLError, TimeoutError, json.JSONDecodeError) as error:
             raise ModelGatewayError(f"Model streaming request failed: {error}") from error
+
+    def _messages(
+        self,
+        question: str,
+        evidence: str,
+        conversation_history: list[dict] | None,
+    ) -> list[dict]:
+        history = [
+            {"role": message["role"], "content": message["content"]}
+            for message in (conversation_history or [])[-8:]
+            if message.get("role") in {"user", "assistant"} and message.get("content")
+        ]
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "Answer the current question using the supplied evidence and conversation context. "
+                    "Cite evidence using [C1], [C2], and say when evidence is insufficient."
+                ),
+            },
+            *history,
+            {
+                "role": "user",
+                "content": f"Current question: {question}\n\nEvidence:\n{evidence}",
+            },
+        ]
 
     def _request_json(
         self,
