@@ -242,8 +242,53 @@ small {
   padding: 13px 0;
 }
 
+.iconButton {
+  flex: 0 0 36px;
+  min-height: 36px;
+  padding: 0;
+}
+
+.dangerButton {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.documentActions {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 6px !important;
+}
+
 .mainPanel {
   min-width: 0;
+}
+
+.uploadPanel {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px;
+}
+
+.filePicker {
+  align-items: center;
+  border: 1px dashed #98a2b3;
+  border-radius: 8px;
+  color: #475467;
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  font-weight: 750;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.filePicker input {
+  display: none;
 }
 
 .ingestPanel {
@@ -653,5 +698,10 @@ small {
 
   .toolbarActions button {
     flex: 1;
+  }
+
+  .uploadPanel {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

@@ -37,6 +37,10 @@ class DocumentResponse(BaseModel):
     title: str
     status: str
     chunk_count: int
+    mime_type: str
+    file_size: int
+    file_hash: str
+    storage_object_key: str
     tags: list[str]
     created_at: datetime
     updated_at: datetime

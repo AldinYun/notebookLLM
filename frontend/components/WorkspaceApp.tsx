@@ -3,6 +3,7 @@
 import {
   Bot,
   CheckCircle2,
+  Download,
   FilePlus2,
   FileSearch,
   FileText,
@@ -12,6 +13,8 @@ import {
   Network,
   Search,
   Settings2,
+  Trash2,
+  Upload,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
@@ -29,6 +32,10 @@ type DocumentItem = {
   title: string;
   status: string;
   chunk_count: number;
+  mime_type: string;
+  file_size: number;
+  file_hash: string;
+  storage_object_key: string;
   tags: string[];
 };
 
@@ -162,6 +169,7 @@ export function WorkspaceApp() {
   const [documentContent, setDocumentContent] = useState(
     "OpenSearch enables BM25, vector, and hybrid retrieval.\nSelf-Corrective RAG evaluates candidate chunks and replenishes context.\nEvery grounded answer should expose citations."
   );
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [query, setQuery] = useState("How should BM25 and vector retrievers be combined?");
   const [selfCorrectiveEnabled, setSelfCorrectiveEnabled] = useState(true);
   const [searchProfiles, setSearchProfiles] = useState<SearchProfile[]>([]);
@@ -351,6 +359,62 @@ export function WorkspaceApp() {
     }
   }
 
+  async function uploadDocument(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedNotebookId || !selectedFile) {
+      setStatusMessage("Select a notebook and file first");
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      const params = new URLSearchParams({
+        notebook_id: selectedNotebookId,
+        title: documentTitle || selectedFile.name,
+        file_name: selectedFile.name,
+        tags: "upload,mvp",
+      });
+      const response = await fetch(`${API_BASE_URL}/documents/upload?${params.toString()}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": selectedFile.type || "application/octet-stream",
+        },
+        body: await selectedFile.arrayBuffer(),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const document = (await response.json()) as DocumentItem;
+      setSelectedFile(null);
+      await refreshWorkspace(selectedNotebookId);
+      setStatusMessage(`Uploaded ${document.file_name} as ${document.chunk_count} chunks`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "File upload failed");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function deleteDocument(documentId: string) {
+    setIsBusy(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      await refreshWorkspace(selectedNotebookId);
+      setSearchResult(null);
+      setRagResult(null);
+      setStatusMessage("Document and indexed chunks deleted");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Document deletion failed");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function runSearch() {
     if (!selectedNotebookId) {
       setStatusMessage("Create or select a notebook first");
@@ -493,10 +557,36 @@ export function WorkspaceApp() {
                   <div>
                     <strong>{document.title}</strong>
                     <small>
-                      {document.file_name} - {document.chunk_count} chunks
+                      {document.file_name} - {document.chunk_count} chunks - {document.file_size} bytes
                     </small>
                   </div>
-                  <span>{document.status}</span>
+                  <div className="documentActions">
+                    <button
+                      aria-label={`Download ${document.title}`}
+                      className="iconButton secondaryButton"
+                      onClick={() =>
+                        window.open(
+                          `${API_BASE_URL}/documents/${document.document_id}/source`,
+                          "_blank",
+                          "noopener,noreferrer"
+                        )
+                      }
+                      title="Download source"
+                      type="button"
+                    >
+                      <Download aria-hidden="true" size={16} />
+                    </button>
+                    <button
+                      aria-label={`Delete ${document.title}`}
+                      className="iconButton dangerButton"
+                      disabled={isBusy}
+                      onClick={() => void deleteDocument(document.document_id)}
+                      title="Delete document"
+                      type="button"
+                    >
+                      <Trash2 aria-hidden="true" size={16} />
+                    </button>
+                  </div>
                 </article>
               ))}
               {selectedDocuments.length === 0 && <p className="emptyState">No documents indexed yet.</p>}
@@ -504,6 +594,21 @@ export function WorkspaceApp() {
           </aside>
 
           <section className="mainPanel">
+            <form className="uploadPanel" onSubmit={(event) => void uploadDocument(event)}>
+              <label className="filePicker">
+                <Upload aria-hidden="true" size={20} />
+                <span>{selectedFile?.name ?? "Choose TXT, MD, CSV, TSV, JSON, XML, or HTML"}</span>
+                <input
+                  accept=".txt,.md,.csv,.tsv,.json,.xml,.html,.htm"
+                  onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                  type="file"
+                />
+              </label>
+              <button disabled={isBusy || !selectedNotebookId || !selectedFile} type="submit">
+                Upload file
+              </button>
+            </form>
+
             <form className="ingestPanel" onSubmit={(event) => void ingestDocument(event)}>
               <div className="twoColumn">
                 <input

@@ -65,11 +65,14 @@ The current backend includes an in-memory flow for validating the product loop b
 - `POST /notebooks`
 - `GET /notebooks`
 - `POST /documents/ingest-text`
+- `POST /documents/upload`
 - `GET /documents`
+- `GET /documents/{document_id}/source`
+- `DELETE /documents/{document_id}`
 - `POST /search`
 - `POST /rag/run`
 
-This slice supports text ingestion, paragraph chunking, BM25-like search, vector-like search, hybrid scoring, deduped RAG context selection, Self-Corrective toggle plumbing, placeholder answer generation, and citation payloads.
+This slice supports text and file ingestion, local source storage, paragraph chunking, BM25-like search, vector-like search, hybrid scoring, deduped RAG context selection, Self-Corrective toggle plumbing, placeholder answer generation, and citation payloads. File parsing currently supports TXT, Markdown, CSV, TSV, JSON, XML, and HTML.
 
 The frontend currently renders the first workspace view for notebook selection, document status, retrieval comparison, RAG profile settings, and run traces.
 

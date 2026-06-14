@@ -10,6 +10,7 @@ class Settings:
 
     postgres_dsn: str = "postgresql://insight:insight@localhost:5432/insight"
     sqlite_path: str = ".data/insight.db"
+    storage_path: str = ".data/storage"
     opensearch_url: str = "http://localhost:9200"
     s3_endpoint_url: str = "http://localhost:8333"
     cors_origins: tuple[str, ...] = ("http://localhost:3000", "http://127.0.0.1:3000")
@@ -24,6 +25,7 @@ settings = Settings(
         "postgresql://insight:insight@localhost:5432/insight",
     ),
     sqlite_path=getenv("INSIGHT_SQLITE_PATH", ".data/insight.db"),
+    storage_path=getenv("INSIGHT_STORAGE_PATH", ".data/storage"),
     opensearch_url=getenv("INSIGHT_OPENSEARCH_URL", "http://localhost:9200"),
     s3_endpoint_url=getenv("INSIGHT_S3_ENDPOINT_URL", "http://localhost:8333"),
     cors_origins=tuple(

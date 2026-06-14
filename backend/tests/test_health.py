@@ -107,6 +107,62 @@ def test_text_ingestion_search_and_rag_flow() -> None:
     assert execution_response.json()["question"] == "How does retrieval work?"
 
 
+def test_file_upload_duplicate_detection_and_delete() -> None:
+    client = TestClient(create_app())
+    notebook_response = client.post(
+        "/notebooks",
+        json={"title": "Upload Notebook", "description": "file lifecycle"},
+    )
+    notebook_id = notebook_response.json()["notebook_id"]
+    params = {
+        "notebook_id": notebook_id,
+        "title": "Upload Requirements",
+        "file_name": "upload.md",
+        "tags": "upload,test",
+    }
+    content = b"# Upload\nBM25 and vector retrieval use uploaded documents."
+
+    upload_response = client.post(
+        "/documents/upload",
+        params=params,
+        content=content,
+        headers={"Content-Type": "text/markdown"},
+    )
+    assert upload_response.status_code == 201
+    upload_payload = upload_response.json()
+    assert upload_payload["file_size"] == len(content)
+    assert upload_payload["file_hash"]
+    assert upload_payload["storage_object_key"].endswith("upload.md")
+
+    source_response = client.get(f"/documents/{upload_payload['document_id']}/source")
+    assert source_response.status_code == 200
+    assert source_response.content == content
+
+    duplicate_response = client.post(
+        "/documents/upload",
+        params=params,
+        content=content,
+        headers={"Content-Type": "text/markdown"},
+    )
+    assert duplicate_response.status_code == 409
+
+    search_response = client.post(
+        "/search",
+        json={
+            "notebook_id": notebook_id,
+            "query": "uploaded documents",
+            "retrievers": [{"mode": "bm25", "top_k": 5}],
+        },
+    )
+    assert search_response.status_code == 200
+    assert search_response.json()["hits"]
+
+    document_id = upload_payload["document_id"]
+    delete_response = client.delete(f"/documents/{document_id}")
+    assert delete_response.status_code == 204
+    assert client.get(f"/documents/{document_id}").status_code == 404
+
+
 def test_workspace_store_persists_documents(tmp_path) -> None:
     db_path = tmp_path / "workspace.db"
     first_store = WorkspaceStore(str(db_path))

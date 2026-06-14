@@ -66,6 +66,10 @@ class WorkspaceStore:
                     title TEXT NOT NULL,
                     status TEXT NOT NULL,
                     chunk_count INTEGER NOT NULL,
+                    mime_type TEXT NOT NULL DEFAULT 'text/plain',
+                    file_size INTEGER NOT NULL DEFAULT 0,
+                    file_hash TEXT NOT NULL DEFAULT '',
+                    storage_object_key TEXT NOT NULL DEFAULT '',
                     tags_json TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -141,6 +145,7 @@ class WorkspaceStore:
                     ON model_connections(workspace_id);
                 """
             )
+            self._ensure_document_columns(connection)
             connection.commit()
 
     def create_notebook(self, title: str, description: str = "") -> Notebook:
@@ -216,11 +221,15 @@ class WorkspaceStore:
                     title,
                     status,
                     chunk_count,
+                    mime_type,
+                    file_size,
+                    file_hash,
+                    storage_object_key,
                     tags_json,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     document.document_id,
@@ -229,6 +238,10 @@ class WorkspaceStore:
                     document.title,
                     document.status,
                     document.chunk_count,
+                    document.mime_type,
+                    document.file_size,
+                    document.file_hash,
+                    document.storage_object_key,
                     json.dumps(document.tags),
                     _serialize_datetime(document.created_at),
                     _serialize_datetime(document.updated_at),
@@ -292,6 +305,23 @@ class WorkspaceStore:
                 (document_id,),
             ).fetchone()
         return self._document_from_row(row) if row is not None else None
+
+    def get_document_by_hash(self, notebook_id: str, file_hash: str) -> Document | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM documents WHERE notebook_id = ? AND file_hash = ? LIMIT 1",
+                (notebook_id, file_hash),
+            ).fetchone()
+        return self._document_from_row(row) if row is not None else None
+
+    def delete_document(self, document_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM documents WHERE document_id = ?",
+                (document_id,),
+            )
+            connection.commit()
+        return cursor.rowcount > 0
 
     def list_chunks(self, notebook_id: str) -> list[ChunkDocument]:
         with self._connect() as connection:
@@ -534,6 +564,10 @@ class WorkspaceStore:
             title=row["title"],
             status=row["status"],
             chunk_count=int(row["chunk_count"]),
+            mime_type=row["mime_type"],
+            file_size=int(row["file_size"]),
+            file_hash=row["file_hash"],
+            storage_object_key=row["storage_object_key"],
             tags=json.loads(row["tags_json"]),
             created_at=_parse_datetime(row["created_at"]),
             updated_at=_parse_datetime(row["updated_at"]),
@@ -600,6 +634,22 @@ class WorkspaceStore:
         if len(api_key) <= 8:
             return "*" * len(api_key)
         return f"{api_key[:3]}...{api_key[-4:]}"
+
+    def _ensure_document_columns(self, connection: sqlite3.Connection) -> None:
+        existing = {
+            row["name"] for row in connection.execute("PRAGMA table_info(documents)").fetchall()
+        }
+        migrations = {
+            "mime_type": "ALTER TABLE documents ADD COLUMN mime_type TEXT NOT NULL DEFAULT 'text/plain'",
+            "file_size": "ALTER TABLE documents ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0",
+            "file_hash": "ALTER TABLE documents ADD COLUMN file_hash TEXT NOT NULL DEFAULT ''",
+            "storage_object_key": (
+                "ALTER TABLE documents ADD COLUMN storage_object_key TEXT NOT NULL DEFAULT ''"
+            ),
+        }
+        for column, statement in migrations.items():
+            if column not in existing:
+                connection.execute(statement)
 
     def _insert_default_search_profiles(
         self,

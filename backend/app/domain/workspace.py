@@ -24,7 +24,10 @@ class Document:
     title: str
     status: str
     chunk_count: int
+    mime_type: str = "text/plain"
+    file_size: int = 0
+    file_hash: str = ""
+    storage_object_key: str = ""
     tags: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=utc_now)
     updated_at: datetime = field(default_factory=utc_now)
-
