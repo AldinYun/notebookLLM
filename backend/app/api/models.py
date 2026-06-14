@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 
 from app.api.schemas import ModelConnectionCreate, ModelConnectionResponse
 from app.services.workspace_store import workspace_store
@@ -36,3 +36,10 @@ async def get_model_connection(connection_id: str) -> ModelConnectionResponse:
     if connection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model connection not found")
     return ModelConnectionResponse.model_validate(connection)
+
+
+@router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_model_connection(connection_id: str) -> Response:
+    if not workspace_store.delete_model_connection(connection_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model connection not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

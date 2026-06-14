@@ -216,10 +216,23 @@ small {
   width: 100%;
 }
 
-.notebookItem.active {
+.notebookRow {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  display: flex;
+  gap: 4px;
+  padding-right: 6px;
+}
+
+.notebookRow.active {
   background: #ecfdf5;
   border-color: #99f6e4;
   color: var(--accent-dark);
+}
+
+.notebookRow .notebookItem {
+  border: 0;
 }
 
 .notebookItem span,
@@ -436,10 +449,24 @@ small {
   margin-bottom: 14px;
 }
 
+.profileSelectRow {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  gap: 4px;
+  padding-right: 6px;
+}
+
+.profileSelectRow.active {
+  background: #ecfdf5;
+  border-color: #99f6e4;
+}
+
 .profileSelect {
   align-items: flex-start;
   background: transparent;
-  border: 1px solid var(--line);
+  border: 0;
   color: var(--ink);
   display: flex;
   flex-direction: column;
@@ -448,9 +475,7 @@ small {
   text-align: left;
 }
 
-.profileSelect.active {
-  background: #ecfdf5;
-  border-color: #99f6e4;
+.profileSelectRow.active .profileSelect {
   color: var(--accent-dark);
 }
 
@@ -502,12 +527,20 @@ small {
 }
 
 .modelList article {
+  align-items: center;
   border: 1px solid var(--line);
   border-radius: 8px;
   display: flex;
+  flex-direction: row;
+  gap: 4px;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.modelList article > div {
+  display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 12px;
 }
 
 .modelList span {

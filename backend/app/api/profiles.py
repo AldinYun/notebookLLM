@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 
 from app.api.schemas import SearchProfileCreate, SearchProfileResponse
 from app.services.workspace_store import workspace_store
@@ -37,3 +37,10 @@ async def get_search_profile(profile_id: str) -> SearchProfileResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search profile not found")
 
     return SearchProfileResponse.model_validate(profile)
+
+
+@router.delete("/search/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_search_profile(profile_id: str) -> Response:
+    if not workspace_store.delete_search_profile(profile_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search profile not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

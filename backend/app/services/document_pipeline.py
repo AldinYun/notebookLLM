@@ -58,6 +58,14 @@ class DocumentPipeline:
             local_storage.delete(document.storage_object_key)
         return deleted
 
+    def delete_notebook(self, notebook_id: str) -> bool:
+        documents = workspace_store.list_documents(notebook_id=notebook_id)
+        deleted = workspace_store.delete_notebook(notebook_id)
+        if deleted:
+            for document in documents:
+                local_storage.delete(document.storage_object_key)
+        return deleted
+
     def _persist_document(
         self,
         notebook_id: str,

@@ -206,6 +206,15 @@ class WorkspaceStore:
             ).fetchone()
         return self._notebook_from_row(row) if row is not None else None
 
+    def delete_notebook(self, notebook_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM notebooks WHERE notebook_id = ?",
+                (notebook_id,),
+            )
+            connection.commit()
+        return cursor.rowcount > 0
+
     def add_document(self, document: Document, chunks: list[ChunkDocument]) -> Document:
         now = utc_now()
         document.created_at = document.created_at or now
@@ -462,6 +471,15 @@ class WorkspaceStore:
             ).fetchone()
         return self._search_profile_from_row(row) if row is not None else None
 
+    def delete_search_profile(self, profile_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM search_profiles WHERE profile_id = ?",
+                (profile_id,),
+            )
+            connection.commit()
+        return cursor.rowcount > 0
+
     def create_model_connection(
         self,
         workspace_id: str,
@@ -531,6 +549,15 @@ class WorkspaceStore:
                 (connection_id,),
             ).fetchone()
         return self._model_connection_from_row(row) if row is not None else None
+
+    def delete_model_connection(self, connection_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM model_connections WHERE connection_id = ?",
+                (connection_id,),
+            )
+            connection.commit()
+        return cursor.rowcount > 0
 
     def reset(self) -> None:
         with self._connect() as connection:

@@ -216,7 +216,12 @@ export function WorkspaceApp() {
       await refreshModelConnections();
       setNotebooks(nextNotebooks);
       setDocuments(nextDocuments);
-      const fallbackNotebookId = nextNotebookId || selectedNotebookId || nextNotebooks[0]?.notebook_id || "";
+      const requestedNotebookId = nextNotebookId || selectedNotebookId;
+      const fallbackNotebookId = nextNotebooks.some(
+        (notebook) => notebook.notebook_id === requestedNotebookId
+      )
+        ? requestedNotebookId
+        : nextNotebooks[0]?.notebook_id || "";
       setSelectedNotebookId(fallbackNotebookId);
       if (fallbackNotebookId) {
         await refreshSearchProfiles(fallbackNotebookId);
@@ -286,6 +291,22 @@ export function WorkspaceApp() {
     }
   }
 
+  async function deleteModelConnection(connectionId: string) {
+    setIsBusy(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/models/connections/${connectionId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await refreshModelConnections();
+      setStatusMessage("Model connection deleted");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Model connection deletion failed");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function createSearchProfile() {
     if (!selectedNotebookId) {
       setStatusMessage("Create or select a notebook first");
@@ -314,6 +335,22 @@ export function WorkspaceApp() {
     }
   }
 
+  async function deleteSearchProfile(profileId: string) {
+    setIsBusy(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/profiles/search/${profileId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await refreshSearchProfiles(selectedNotebookId);
+      setStatusMessage("Search profile deleted");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Search profile deletion failed");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function createNotebook(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsBusy(true);
@@ -326,6 +363,25 @@ export function WorkspaceApp() {
       await refreshWorkspace(notebook.notebook_id);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Notebook creation failed");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function deleteNotebook(notebookId: string) {
+    setIsBusy(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/notebooks/${notebookId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error(await response.text());
+      setSearchResult(null);
+      setRagResult(null);
+      setSelectedNotebookId("");
+      await refreshWorkspace();
+      setStatusMessage("Notebook and related data deleted");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Notebook deletion failed");
     } finally {
       setIsBusy(false);
     }
@@ -524,26 +580,40 @@ export function WorkspaceApp() {
 
             <div className="notebookList">
               {notebooks.map((notebook) => (
-                <button
-                  className={`notebookItem ${notebook.notebook_id === selectedNotebookId ? "active" : ""}`}
+                <div
+                  className={`notebookRow ${notebook.notebook_id === selectedNotebookId ? "active" : ""}`}
                   key={notebook.notebook_id}
-                  onClick={() => {
-                    setSelectedNotebookId(notebook.notebook_id);
-                    setSearchResult(null);
-                    setRagResult(null);
-                    void refreshRagExecutions(notebook.notebook_id);
-                    void refreshSearchProfiles(notebook.notebook_id);
-                  }}
-                  type="button"
                 >
-                  <FileText aria-hidden="true" size={18} />
-                  <span>
-                    <strong>{notebook.title}</strong>
-                    <small>
-                      {notebook.document_count} docs - {notebook.description || "No description"}
-                    </small>
-                  </span>
-                </button>
+                  <button
+                    className="notebookItem"
+                    onClick={() => {
+                      setSelectedNotebookId(notebook.notebook_id);
+                      setSearchResult(null);
+                      setRagResult(null);
+                      void refreshRagExecutions(notebook.notebook_id);
+                      void refreshSearchProfiles(notebook.notebook_id);
+                    }}
+                    type="button"
+                  >
+                    <FileText aria-hidden="true" size={18} />
+                    <span>
+                      <strong>{notebook.title}</strong>
+                      <small>
+                        {notebook.document_count} docs - {notebook.description || "No description"}
+                      </small>
+                    </span>
+                  </button>
+                  <button
+                    aria-label={`Delete ${notebook.title}`}
+                    className="iconButton dangerButton"
+                    disabled={isBusy}
+                    onClick={() => void deleteNotebook(notebook.notebook_id)}
+                    title="Delete notebook"
+                    type="button"
+                  >
+                    <Trash2 aria-hidden="true" size={15} />
+                  </button>
+                </div>
               ))}
             </div>
 
@@ -723,9 +793,21 @@ export function WorkspaceApp() {
               <div className="modelList">
                 {modelConnections.map((connection) => (
                   <article key={connection.connection_id}>
-                    <strong>{connection.name}</strong>
-                    <span>{connection.model_id}</span>
-                    <small>{connection.api_key_hint}</small>
+                    <div>
+                      <strong>{connection.name}</strong>
+                      <span>{connection.model_id}</span>
+                      <small>{connection.api_key_hint}</small>
+                    </div>
+                    <button
+                      aria-label={`Delete ${connection.name}`}
+                      className="iconButton dangerButton"
+                      disabled={isBusy}
+                      onClick={() => void deleteModelConnection(connection.connection_id)}
+                      title="Delete model connection"
+                      type="button"
+                    >
+                      <Trash2 aria-hidden="true" size={15} />
+                    </button>
                   </article>
                 ))}
                 {modelConnections.length === 0 && <p className="emptyState">No model connections yet.</p>}
@@ -739,20 +821,34 @@ export function WorkspaceApp() {
               </div>
               <div className="profileSelectList">
                 {searchProfiles.map((profile) => (
-                  <button
-                    className={`profileSelect ${profile.profile_id === selectedProfileId ? "active" : ""}`}
+                  <div
+                    className={`profileSelectRow ${profile.profile_id === selectedProfileId ? "active" : ""}`}
                     key={profile.profile_id}
-                    onClick={() => {
-                      setSelectedProfileId(profile.profile_id);
-                      setSelfCorrectiveEnabled(profile.self_corrective_enabled);
-                    }}
-                    type="button"
                   >
-                    <strong>{profile.name}</strong>
-                    <small>
-                      {profile.retrievers.map((retriever) => retriever.mode).join(" + ")}
-                    </small>
-                  </button>
+                    <button
+                      className="profileSelect"
+                      onClick={() => {
+                        setSelectedProfileId(profile.profile_id);
+                        setSelfCorrectiveEnabled(profile.self_corrective_enabled);
+                      }}
+                      type="button"
+                    >
+                      <strong>{profile.name}</strong>
+                      <small>
+                        {profile.retrievers.map((retriever) => retriever.mode).join(" + ")}
+                      </small>
+                    </button>
+                    <button
+                      aria-label={`Delete ${profile.name}`}
+                      className="iconButton dangerButton"
+                      disabled={isBusy}
+                      onClick={() => void deleteSearchProfile(profile.profile_id)}
+                      title="Delete search profile"
+                      type="button"
+                    >
+                      <Trash2 aria-hidden="true" size={15} />
+                    </button>
+                  </div>
                 ))}
               </div>
               <label className="toggleRow">
