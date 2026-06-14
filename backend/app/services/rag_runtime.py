@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from app.api.schemas import CitationResponse, RagRunRequest, SearchRequest
 from app.services.search_service import SearchResult, search_service
+from app.services.model_gateway import ModelGatewayError, model_gateway
 from app.services.workspace_store import workspace_store
 
 
@@ -18,6 +19,8 @@ class RagRunResult:
     self_corrective_enabled: bool
     excluded_chunk_ids: list[str]
     elapsed_ms: float
+    model_connection_id: str | None
+    generation_mode: str
 
 
 class RagRuntime:
@@ -59,7 +62,21 @@ class RagRuntime:
             for index, hit in enumerate(selected_hits, start=1)
         ]
 
-        answer = self._compose_answer(request.question, citations)
+        model_connection = None
+        generation_mode = "placeholder"
+        if request.model_connection_id:
+            model_connection = workspace_store.get_model_connection(request.model_connection_id)
+            if model_connection is None:
+                raise ModelGatewayError("Model connection not found")
+            answer = model_gateway.generate(
+                connection=model_connection,
+                question=request.question,
+                citations=[citation.model_dump() for citation in citations],
+                api_key=request.model_api_key,
+            )
+            generation_mode = "model"
+        else:
+            answer = self._compose_answer(request.question, citations)
         elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
         result = RagRunResult(
             rag_execution_id=rag_execution_id,
@@ -71,6 +88,8 @@ class RagRuntime:
             self_corrective_enabled=request.self_corrective_enabled,
             excluded_chunk_ids=excluded_chunk_ids,
             elapsed_ms=elapsed_ms,
+            model_connection_id=request.model_connection_id,
+            generation_mode=generation_mode,
         )
         workspace_store.add_rag_execution(
             rag_execution_id=rag_execution_id,
@@ -88,6 +107,8 @@ class RagRuntime:
             self_corrective_enabled=request.self_corrective_enabled,
             excluded_chunk_ids=excluded_chunk_ids,
             elapsed_ms=elapsed_ms,
+            model_connection_id=request.model_connection_id,
+            generation_mode=generation_mode,
         )
         return result
 

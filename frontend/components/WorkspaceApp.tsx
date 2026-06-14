@@ -85,6 +85,8 @@ type RagResponse = {
   self_corrective_enabled: boolean;
   excluded_chunk_ids: string[];
   elapsed_ms: number;
+  model_connection_id: string | null;
+  generation_mode: "placeholder" | "model";
 };
 
 type RagExecution = RagResponse & {
@@ -180,6 +182,8 @@ export function WorkspaceApp() {
   const [modelBaseUrl, setModelBaseUrl] = useState("http://localhost:8001/v1");
   const [modelId, setModelId] = useState("local-model");
   const [apiKey, setApiKey] = useState("");
+  const [selectedModelConnectionId, setSelectedModelConnectionId] = useState("");
+  const [runtimeApiKey, setRuntimeApiKey] = useState("");
   const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
   const [ragResult, setRagResult] = useState<RagResponse | null>(null);
   const [ragExecutions, setRagExecutions] = useState<RagExecution[]>([]);
@@ -264,6 +268,11 @@ export function WorkspaceApp() {
   async function refreshModelConnections() {
     const connections = await requestJson<ModelConnection[]>("/models/connections");
     setModelConnections(connections);
+    setSelectedModelConnectionId((current) =>
+      connections.some((connection) => connection.connection_id === current)
+        ? current
+        : ""
+    );
   }
 
   async function createModelConnection(event: FormEvent<HTMLFormElement>) {
@@ -307,6 +316,26 @@ export function WorkspaceApp() {
     }
   }
 
+  async function testModelConnection(connectionId: string) {
+    setIsBusy(true);
+    try {
+      const result = await requestJson<{ status: string; models: string[] }>(
+        `/models/connections/${connectionId}/test`,
+        {
+          method: "POST",
+          body: JSON.stringify({ api_key: runtimeApiKey }),
+        }
+      );
+      setStatusMessage(
+        result.models.length ? `Connection ok: ${result.models.join(", ")}` : "Connection ok"
+      );
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Model connection test failed");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function createSearchProfile() {
     if (!selectedNotebookId) {
       setStatusMessage("Create or select a notebook first");
@@ -323,6 +352,8 @@ export function WorkspaceApp() {
           retrievers: activeRetrievers,
           self_corrective_enabled: selfCorrectiveEnabled,
           final_context_limit: activeFinalContextLimit,
+          model_connection_id: selectedModelConnectionId || null,
+          model_api_key: runtimeApiKey,
         }),
       });
       await refreshSearchProfiles(selectedNotebookId);
@@ -792,26 +823,58 @@ export function WorkspaceApp() {
               </form>
               <div className="modelList">
                 {modelConnections.map((connection) => (
-                  <article key={connection.connection_id}>
+                  <article
+                    className={
+                      connection.connection_id === selectedModelConnectionId ? "selectedModel" : ""
+                    }
+                    key={connection.connection_id}
+                  >
                     <div>
                       <strong>{connection.name}</strong>
                       <span>{connection.model_id}</span>
                       <small>{connection.api_key_hint}</small>
                     </div>
-                    <button
-                      aria-label={`Delete ${connection.name}`}
-                      className="iconButton dangerButton"
-                      disabled={isBusy}
-                      onClick={() => void deleteModelConnection(connection.connection_id)}
-                      title="Delete model connection"
-                      type="button"
-                    >
-                      <Trash2 aria-hidden="true" size={15} />
-                    </button>
+                    <div className="modelActions">
+                      <button
+                        className="iconButton secondaryButton"
+                        onClick={() => setSelectedModelConnectionId(connection.connection_id)}
+                        title="Use model"
+                        type="button"
+                      >
+                        <CheckCircle2 aria-hidden="true" size={15} />
+                      </button>
+                      <button
+                        className="iconButton secondaryButton"
+                        disabled={isBusy}
+                        onClick={() => void testModelConnection(connection.connection_id)}
+                        title="Test connection"
+                        type="button"
+                      >
+                        <Gauge aria-hidden="true" size={15} />
+                      </button>
+                      <button
+                        aria-label={`Delete ${connection.name}`}
+                        className="iconButton dangerButton"
+                        disabled={isBusy}
+                        onClick={() => void deleteModelConnection(connection.connection_id)}
+                        title="Delete model connection"
+                        type="button"
+                      >
+                        <Trash2 aria-hidden="true" size={15} />
+                      </button>
+                    </div>
                   </article>
                 ))}
                 {modelConnections.length === 0 && <p className="emptyState">No model connections yet.</p>}
               </div>
+              <input
+                aria-label="Runtime model API key"
+                className="runtimeKeyInput"
+                onChange={(event) => setRuntimeApiKey(event.target.value)}
+                placeholder="Runtime API key (not stored)"
+                type="password"
+                value={runtimeApiKey}
+              />
             </section>
 
             <section className="statusPanel">
@@ -901,6 +964,10 @@ export function WorkspaceApp() {
                 <li>
                   <CheckCircle2 aria-hidden="true" size={16} />
                   {ragResult ? `${ragResult.citations.length} citations prepared` : "No citations yet"}
+                </li>
+                <li>
+                  <CheckCircle2 aria-hidden="true" size={16} />
+                  {ragResult ? `Generation: ${ragResult.generation_mode}` : "No generation yet"}
                 </li>
               </ol>
             </section>

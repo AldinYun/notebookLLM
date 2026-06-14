@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.api.schemas import RagExecutionResponse, RagRunRequest, RagRunResponse
 from app.services.rag_runtime import rag_runtime
+from app.services.model_gateway import ModelGatewayError
 from app.services.workspace_store import workspace_store
 
 router = APIRouter()
@@ -12,7 +13,10 @@ async def run_rag(payload: RagRunRequest) -> RagRunResponse:
     if workspace_store.get_notebook(payload.notebook_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notebook not found")
 
-    result = rag_runtime.run(payload)
+    try:
+        result = rag_runtime.run(payload)
+    except ModelGatewayError as error:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
     return RagRunResponse.model_validate(result)
 
 

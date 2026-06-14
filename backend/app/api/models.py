@@ -1,6 +1,12 @@
 from fastapi import APIRouter, HTTPException, Response, status
 
-from app.api.schemas import ModelConnectionCreate, ModelConnectionResponse
+from app.api.schemas import (
+    ModelConnectionCreate,
+    ModelConnectionResponse,
+    ModelConnectionTestRequest,
+    ModelConnectionTestResponse,
+)
+from app.services.model_gateway import ModelGatewayError, model_gateway
 from app.services.workspace_store import workspace_store
 
 router = APIRouter()
@@ -36,6 +42,24 @@ async def get_model_connection(connection_id: str) -> ModelConnectionResponse:
     if connection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model connection not found")
     return ModelConnectionResponse.model_validate(connection)
+
+
+@router.post(
+    "/connections/{connection_id}/test",
+    response_model=ModelConnectionTestResponse,
+)
+async def test_model_connection(
+    connection_id: str,
+    payload: ModelConnectionTestRequest,
+) -> ModelConnectionTestResponse:
+    connection = workspace_store.get_model_connection(connection_id)
+    if connection is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model connection not found")
+    try:
+        models = model_gateway.list_models(connection, payload.api_key)
+    except ModelGatewayError as error:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
+    return ModelConnectionTestResponse(status="ok", models=models)
 
 
 @router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)

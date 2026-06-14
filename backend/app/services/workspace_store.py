@@ -99,6 +99,8 @@ class WorkspaceStore:
                     self_corrective_enabled INTEGER NOT NULL,
                     excluded_chunk_ids_json TEXT NOT NULL,
                     elapsed_ms REAL NOT NULL,
+                    model_connection_id TEXT,
+                    generation_mode TEXT NOT NULL DEFAULT 'placeholder',
                     created_at TEXT NOT NULL
                 );
 
@@ -146,6 +148,7 @@ class WorkspaceStore:
                 """
             )
             self._ensure_document_columns(connection)
+            self._ensure_rag_execution_columns(connection)
             connection.commit()
 
     def create_notebook(self, title: str, description: str = "") -> Notebook:
@@ -352,6 +355,8 @@ class WorkspaceStore:
         self_corrective_enabled: bool,
         excluded_chunk_ids: list[str],
         elapsed_ms: float,
+        model_connection_id: str | None,
+        generation_mode: str,
     ) -> None:
         with self._connect() as connection:
             connection.execute(
@@ -367,9 +372,11 @@ class WorkspaceStore:
                     self_corrective_enabled,
                     excluded_chunk_ids_json,
                     elapsed_ms,
+                    model_connection_id,
+                    generation_mode,
                     created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     rag_execution_id,
@@ -382,6 +389,8 @@ class WorkspaceStore:
                     1 if self_corrective_enabled else 0,
                     json.dumps(excluded_chunk_ids),
                     elapsed_ms,
+                    model_connection_id,
+                    generation_mode,
                     _serialize_datetime(utc_now()),
                 ),
             )
@@ -626,6 +635,8 @@ class WorkspaceStore:
             "self_corrective_enabled": bool(row["self_corrective_enabled"]),
             "excluded_chunk_ids": json.loads(row["excluded_chunk_ids_json"]),
             "elapsed_ms": float(row["elapsed_ms"]),
+            "model_connection_id": row["model_connection_id"],
+            "generation_mode": row["generation_mode"],
             "created_at": _parse_datetime(row["created_at"]),
         }
 
@@ -672,6 +683,21 @@ class WorkspaceStore:
             "file_hash": "ALTER TABLE documents ADD COLUMN file_hash TEXT NOT NULL DEFAULT ''",
             "storage_object_key": (
                 "ALTER TABLE documents ADD COLUMN storage_object_key TEXT NOT NULL DEFAULT ''"
+            ),
+        }
+        for column, statement in migrations.items():
+            if column not in existing:
+                connection.execute(statement)
+
+    def _ensure_rag_execution_columns(self, connection: sqlite3.Connection) -> None:
+        existing = {
+            row["name"] for row in connection.execute("PRAGMA table_info(rag_executions)").fetchall()
+        }
+        migrations = {
+            "model_connection_id": "ALTER TABLE rag_executions ADD COLUMN model_connection_id TEXT",
+            "generation_mode": (
+                "ALTER TABLE rag_executions ADD COLUMN generation_mode TEXT NOT NULL "
+                "DEFAULT 'placeholder'"
             ),
         }
         for column, statement in migrations.items():

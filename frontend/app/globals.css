@@ -543,6 +543,26 @@ small {
   gap: 4px;
 }
 
+.modelList article.selectedModel {
+  background: #ecfdf5;
+  border-color: #99f6e4;
+}
+
+.modelActions {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 5px !important;
+}
+
+.runtimeKeyInput {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 10px;
+  min-height: 40px;
+  padding: 0 10px;
+  width: 100%;
+}
+
 .modelList span {
   color: var(--accent-dark);
   font-size: 0.86rem;

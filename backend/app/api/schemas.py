@@ -96,6 +96,8 @@ class RagRunRequest(BaseModel):
     )
     self_corrective_enabled: bool = False
     final_context_limit: int = Field(default=8, ge=1, le=20)
+    model_connection_id: str | None = None
+    model_api_key: str = Field(default="", max_length=500)
 
 
 class CitationResponse(BaseModel):
@@ -118,6 +120,8 @@ class RagRunResponse(BaseModel):
     self_corrective_enabled: bool
     excluded_chunk_ids: list[str]
     elapsed_ms: float
+    model_connection_id: str | None
+    generation_mode: Literal["placeholder", "model"]
 
 
 class RagExecutionResponse(RagRunResponse):
@@ -167,3 +171,12 @@ class ModelConnectionResponse(BaseModel):
     capabilities: list[str]
     created_at: datetime
     updated_at: datetime
+
+
+class ModelConnectionTestRequest(BaseModel):
+    api_key: str = Field(default="", max_length=500)
+
+
+class ModelConnectionTestResponse(BaseModel):
+    status: Literal["ok"]
+    models: list[str]

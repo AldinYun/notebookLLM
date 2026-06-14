@@ -1,3 +1,7 @@
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -179,6 +183,81 @@ def test_workspace_store_persists_documents(tmp_path) -> None:
     assert notebooks[0].document_count == 1
     assert documents[0].document_id == document_response.document_id
     assert len(chunks) == 2
+
+
+def test_openai_compatible_model_gateway() -> None:
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = json.dumps({"data": [{"id": "mock-model"}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self) -> None:
+            length = int(self.headers.get("Content-Length", "0"))
+            json.loads(self.rfile.read(length) or b"{}")
+            body = json.dumps(
+                {"choices": [{"message": {"content": "Mock grounded answer [C1]"}}]}
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args) -> None:
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = TestClient(create_app())
+        base_url = f"http://127.0.0.1:{server.server_port}/v1"
+        model_response = client.post(
+            "/models/connections",
+            json={
+                "name": "Mock",
+                "base_url": base_url,
+                "model_id": "mock-model",
+                "capabilities": ["chat"],
+            },
+        )
+        connection_id = model_response.json()["connection_id"]
+        assert client.post(
+            f"/models/connections/{connection_id}/test",
+            json={"api_key": ""},
+        ).status_code == 200
+
+        notebook_id = client.post(
+            "/notebooks",
+            json={"title": "Model RAG", "description": "mock"},
+        ).json()["notebook_id"]
+        client.post(
+            "/documents/upload",
+            params={
+                "notebook_id": notebook_id,
+                "title": "Evidence",
+                "file_name": "evidence.md",
+            },
+            content=b"Grounded evidence supports the answer.",
+            headers={"Content-Type": "text/markdown"},
+        )
+        rag_response = client.post(
+            "/rag/run",
+            json={
+                "notebook_id": notebook_id,
+                "question": "What supports the answer?",
+                "model_connection_id": connection_id,
+                "retrievers": [{"mode": "bm25", "top_k": 5}],
+            },
+        )
+        assert rag_response.status_code == 200
+        assert rag_response.json()["generation_mode"] == "model"
+        assert rag_response.json()["answer"] == "Mock grounded answer [C1]"
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def client_document_fixture(store: WorkspaceStore, notebook_id: str):
