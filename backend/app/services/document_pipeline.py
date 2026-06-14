@@ -3,8 +3,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.domain.chunk import ChunkDocument
-from app.domain.workspace import Document
+from app.domain.workspace import Document, utc_now
 from app.services.document_parser import document_parser
+from app.services.embedding_service import embedding_service
 from app.services.local_storage import local_storage
 from app.services.workspace_store import workspace_store
 
@@ -17,6 +18,8 @@ class DocumentPipeline:
         title: str,
         content: str,
         tags: list[str],
+        embedding_connection_id: str | None = None,
+        embedding_api_key: str = "",
     ) -> Document:
         content_bytes = content.encode("utf-8")
         return self._persist_document(
@@ -27,6 +30,8 @@ class DocumentPipeline:
             source_bytes=content_bytes,
             mime_type="text/plain",
             tags=tags,
+            embedding_connection_id=embedding_connection_id,
+            embedding_api_key=embedding_api_key,
         )
 
     def ingest_file(
@@ -37,6 +42,8 @@ class DocumentPipeline:
         source_bytes: bytes,
         mime_type: str,
         tags: list[str],
+        embedding_connection_id: str | None = None,
+        embedding_api_key: str = "",
     ) -> Document:
         content = document_parser.parse(file_name, source_bytes)
         return self._persist_document(
@@ -47,6 +54,8 @@ class DocumentPipeline:
             source_bytes=source_bytes,
             mime_type=mime_type,
             tags=tags,
+            embedding_connection_id=embedding_connection_id,
+            embedding_api_key=embedding_api_key,
         )
 
     def delete_document(self, document_id: str) -> bool:
@@ -75,6 +84,8 @@ class DocumentPipeline:
         source_bytes: bytes,
         mime_type: str,
         tags: list[str],
+        embedding_connection_id: str | None,
+        embedding_api_key: str,
     ) -> Document:
         document_id = f"doc_{uuid4().hex[:12]}"
         safe_name = Path(file_name).name
@@ -86,27 +97,50 @@ class DocumentPipeline:
                 f"The same file is already indexed as {duplicate.file_name} ({duplicate.document_id})"
             )
         local_storage.save(object_key, source_bytes)
-        chunks = self._chunk_text(
-            notebook_id=notebook_id,
-            document_id=document_id,
-            title=title,
-            content=content,
-            tags=tags,
-        )
-        document = Document(
-            document_id=document_id,
-            notebook_id=notebook_id,
-            file_name=safe_name,
-            title=title,
-            status="indexed",
-            chunk_count=len(chunks),
-            mime_type=mime_type,
-            file_size=len(source_bytes),
-            file_hash=file_hash,
-            storage_object_key=object_key,
-            tags=tags,
-        )
         try:
+            chunks = self._chunk_text(
+                notebook_id=notebook_id,
+                document_id=document_id,
+                title=title,
+                content=content,
+                tags=tags,
+            )
+            if embedding_connection_id is not None:
+                embeddings = embedding_service.embed_texts(
+                    embedding_connection_id,
+                    [chunk.content for chunk in chunks],
+                    embedding_api_key,
+                )
+                embedded_at = utc_now()
+                chunks = [
+                    ChunkDocument(
+                        tenant_id=chunk.tenant_id,
+                        workspace_id=chunk.workspace_id,
+                        notebook_id=chunk.notebook_id,
+                        document_id=chunk.document_id,
+                        chunk_id=chunk.chunk_id,
+                        content=chunk.content,
+                        content_normalized=chunk.content_normalized,
+                        embedding=embedding,
+                        metadata=chunk.metadata,
+                        embedded_at=embedded_at,
+                    )
+                    for chunk, embedding in zip(chunks, embeddings, strict=True)
+                ]
+            document = Document(
+                document_id=document_id,
+                notebook_id=notebook_id,
+                file_name=safe_name,
+                title=title,
+                status="indexed",
+                chunk_count=len(chunks),
+                embedded_chunk_count=len(chunks) if embedding_connection_id is not None else 0,
+                mime_type=mime_type,
+                file_size=len(source_bytes),
+                file_hash=file_hash,
+                storage_object_key=object_key,
+                tags=tags,
+            )
             return workspace_store.add_document(document=document, chunks=chunks)
         except Exception:
             local_storage.delete(object_key)

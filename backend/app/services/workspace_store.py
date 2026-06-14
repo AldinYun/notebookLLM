@@ -325,7 +325,13 @@ class WorkspaceStore:
         return document
 
     def list_documents(self, notebook_id: str | None = None) -> list[Document]:
-        query = "SELECT * FROM documents"
+        query = """
+            SELECT documents.*,
+                (SELECT COUNT(*) FROM chunks
+                 WHERE chunks.document_id = documents.document_id
+                   AND chunks.embedding_json IS NOT NULL) AS embedded_chunk_count
+            FROM documents
+        """
         params: tuple[str, ...] = ()
         if notebook_id is not None:
             query += " WHERE notebook_id = ?"
@@ -339,7 +345,13 @@ class WorkspaceStore:
     def get_document(self, document_id: str) -> Document | None:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT * FROM documents WHERE document_id = ?",
+                """
+                SELECT documents.*,
+                    (SELECT COUNT(*) FROM chunks
+                     WHERE chunks.document_id = documents.document_id
+                       AND chunks.embedding_json IS NOT NULL) AS embedded_chunk_count
+                FROM documents WHERE document_id = ?
+                """,
                 (document_id,),
             ).fetchone()
         return self._document_from_row(row) if row is not None else None
@@ -347,7 +359,14 @@ class WorkspaceStore:
     def get_document_by_hash(self, notebook_id: str, file_hash: str) -> Document | None:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT * FROM documents WHERE notebook_id = ? AND file_hash = ? LIMIT 1",
+                """
+                SELECT documents.*,
+                    (SELECT COUNT(*) FROM chunks
+                     WHERE chunks.document_id = documents.document_id
+                       AND chunks.embedding_json IS NOT NULL) AS embedded_chunk_count
+                FROM documents
+                WHERE notebook_id = ? AND file_hash = ? LIMIT 1
+                """,
                 (notebook_id, file_hash),
             ).fetchone()
         return self._document_from_row(row) if row is not None else None
@@ -368,6 +387,34 @@ class WorkspaceStore:
                 (notebook_id,),
             ).fetchall()
         return [self._chunk_from_row(row) for row in rows]
+
+    def list_document_chunks(self, document_id: str) -> list[ChunkDocument]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM chunks WHERE document_id = ? ORDER BY rowid ASC",
+                (document_id,),
+            ).fetchall()
+        return [self._chunk_from_row(row) for row in rows]
+
+    def update_chunk_embeddings(
+        self,
+        document_id: str,
+        embeddings: list[list[float]],
+        embedded_at: datetime,
+    ) -> int:
+        chunks = self.list_document_chunks(document_id)
+        if len(chunks) != len(embeddings):
+            raise ValueError("Embedding count does not match document chunk count")
+        with self._connect() as connection:
+            connection.executemany(
+                "UPDATE chunks SET embedding_json = ?, embedded_at = ? WHERE chunk_id = ?",
+                [
+                    (json.dumps(embedding), _serialize_datetime(embedded_at), chunk.chunk_id)
+                    for chunk, embedding in zip(chunks, embeddings, strict=True)
+                ],
+            )
+            connection.commit()
+        return len(chunks)
 
     def add_rag_execution(
         self,
@@ -745,6 +792,11 @@ class WorkspaceStore:
             title=row["title"],
             status=row["status"],
             chunk_count=int(row["chunk_count"]),
+            embedded_chunk_count=(
+                int(row["embedded_chunk_count"])
+                if "embedded_chunk_count" in row.keys()
+                else 0
+            ),
             mime_type=row["mime_type"],
             file_size=int(row["file_size"]),
             file_hash=row["file_hash"],

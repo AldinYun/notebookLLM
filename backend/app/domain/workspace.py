@@ -24,6 +24,7 @@ class Document:
     title: str
     status: str
     chunk_count: int
+    embedded_chunk_count: int = 0
     mime_type: str = "text/plain"
     file_size: int = 0
     file_hash: str = ""

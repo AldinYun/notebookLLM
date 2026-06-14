@@ -123,9 +123,9 @@ should be deleted.
 
 ### Model Server
 
-Only an OpenAI-compatible chat model is required for the current MVP. Start vLLM, Ollama with an
-OpenAI-compatible endpoint, or another compatible server separately, then create a model connection
-in the UI. When the model runs directly on the same Linux host as Docker, use a base URL such as:
+Run an OpenAI-compatible chat model and embedding model separately, then register each connection in
+the Models panel with its `Chat model` or `Embedding model` capability. When a model runs directly on
+the same Linux host as Docker, use a base URL such as:
 
 ```text
 http://host.docker.internal:8001/v1
@@ -134,10 +134,14 @@ http://host.docker.internal:8001/v1
 When it runs on another machine, use `http://MODEL_SERVER_IP:PORT/v1`. The model endpoint must be
 reachable from the backend container; it does not need to be publicly reachable from the browser.
 
-The current `vector` retriever is a local lexical cosine approximation and does not call an embedding
-model yet. Running a separate embedding server will therefore not change retrieval quality until the
-embedding gateway and a vector index are connected. PostgreSQL, OpenSearch, and S3-compatible storage
-in `infra/docker-compose.yml` are architecture targets and are also not required by this deployment.
+When an embedding connection is selected, new document chunks are embedded during ingestion and
+vector or hybrid searches embed the query through the same connection. Existing documents can be
+re-embedded with the network button next to each document. Without a selected embedding connection,
+the vector mode retains its lexical compatibility fallback. The current MVP stores vectors in SQLite
+and calculates cosine similarity in the API process; OpenSearch remains the next scaling step.
+
+PostgreSQL, OpenSearch, and S3-compatible storage in `infra/docker-compose.yml` are architecture
+targets and are not required by this deployment yet.
 
 For an internet-facing installation, place a TLS reverse proxy such as Caddy, Nginx, or Traefik in
 front of port `3000`, and restrict direct access to port `8000` with the server firewall.

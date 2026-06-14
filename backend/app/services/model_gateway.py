@@ -46,6 +46,24 @@ class ModelGateway:
         except (KeyError, IndexError, TypeError) as error:
             raise ModelGatewayError("Model response did not contain choices[0].message.content") from error
 
+    def embed(self, connection: dict, inputs: list[str], api_key: str = "") -> list[list[float]]:
+        if not inputs:
+            return []
+        payload = self._request_json(
+            method="POST",
+            url=f"{connection['base_url'].rstrip('/')}/embeddings",
+            api_key=api_key,
+            body={"model": connection["model_id"], "input": inputs},
+        )
+        try:
+            ordered = sorted(payload["data"], key=lambda item: int(item.get("index", 0)))
+            embeddings = [[float(value) for value in item["embedding"]] for item in ordered]
+        except (KeyError, TypeError, ValueError) as error:
+            raise ModelGatewayError("Embedding response did not contain valid data[].embedding") from error
+        if len(embeddings) != len(inputs) or any(not embedding for embedding in embeddings):
+            raise ModelGatewayError("Embedding response count or dimensions did not match the request")
+        return embeddings
+
     def stream_generate(
         self,
         connection: dict,

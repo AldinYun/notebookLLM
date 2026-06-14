@@ -598,7 +598,8 @@ small {
   margin-bottom: 14px;
 }
 
-.modelForm input {
+.modelForm input,
+.modelForm select {
   border: 1px solid var(--line);
   border-radius: 8px;
   min-height: 40px;
@@ -646,6 +647,21 @@ small {
   min-height: 40px;
   padding: 0 10px;
   width: 100%;
+}
+
+.modelSelectionSummary {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.modelSelectionSummary span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
 }
 
 .modelList span {

@@ -364,6 +364,102 @@ def test_openai_compatible_model_gateway() -> None:
         server.server_close()
 
 
+def test_openai_compatible_embedding_ingestion_and_vector_search() -> None:
+    class EmbeddingHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = json.dumps({"data": [{"id": "mock-embedding"}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self) -> None:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            vectors = []
+            for index, text in enumerate(payload.get("input", [])):
+                lowered = text.lower()
+                if "automobile" in lowered or lowered == "car":
+                    embedding = [1.0, 0.0, 0.0]
+                elif "banana" in lowered:
+                    embedding = [0.0, 1.0, 0.0]
+                else:
+                    embedding = [0.0, 0.0, 1.0]
+                vectors.append({"index": index, "embedding": embedding})
+            body = json.dumps({"data": vectors}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args) -> None:
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), EmbeddingHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = TestClient(create_app())
+        connection = client.post(
+            "/models/connections",
+            json={
+                "name": "Mock Embedding",
+                "base_url": f"http://127.0.0.1:{server.server_port}/v1",
+                "model_id": "mock-embedding",
+                "capabilities": ["embedding"],
+            },
+        ).json()
+        connection_id = connection["connection_id"]
+        test_response = client.post(
+            f"/models/connections/{connection_id}/test",
+            json={"api_key": ""},
+        )
+        assert test_response.status_code == 200
+        assert test_response.json()["embedding_dimensions"] == 3
+
+        notebook_id = client.post(
+            "/notebooks",
+            json={"title": "Embedding Search", "description": "semantic retrieval"},
+        ).json()["notebook_id"]
+        ingest_response = client.post(
+            "/documents/ingest-text",
+            json={
+                "notebook_id": notebook_id,
+                "file_name": "semantic.md",
+                "title": "Semantic Evidence",
+                "content": "An automobile carries passengers.\nA banana is yellow.",
+                "embedding_connection_id": connection_id,
+            },
+        )
+        assert ingest_response.status_code == 201
+        assert ingest_response.json()["embedded_chunk_count"] == 2
+
+        search_response = client.post(
+            "/search",
+            json={
+                "notebook_id": notebook_id,
+                "query": "car",
+                "retrievers": [{"mode": "vector", "top_k": 2}],
+                "embedding_connection_id": connection_id,
+            },
+        )
+        assert search_response.status_code == 200
+        hits = search_response.json()["hits"]
+        assert hits[0]["snippet"] == "An automobile carries passengers."
+        assert hits[0]["score"] == 1.0
+        assert hits[0]["matched_terms"] == []
+
+        embed_response = client.post(
+            f"/documents/{ingest_response.json()['document_id']}/embed",
+            json={"embedding_connection_id": connection_id},
+        )
+        assert embed_response.status_code == 200
+        assert embed_response.json()["embedded_chunk_count"] == 2
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def client_document_fixture(store: WorkspaceStore, notebook_id: str):
     from app.domain.chunk import ChunkDocument
     from app.domain.workspace import Document

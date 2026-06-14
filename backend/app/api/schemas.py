@@ -26,6 +26,19 @@ class DocumentIngestRequest(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     content: str = Field(min_length=1)
     tags: list[str] = Field(default_factory=list)
+    embedding_connection_id: str | None = None
+    embedding_api_key: str = Field(default="", max_length=500)
+
+
+class DocumentEmbedRequest(BaseModel):
+    embedding_connection_id: str
+    embedding_api_key: str = Field(default="", max_length=500)
+
+
+class DocumentEmbedResponse(BaseModel):
+    document_id: str
+    embedded_chunk_count: int
+    embedding_connection_id: str
 
 
 class DocumentResponse(BaseModel):
@@ -37,6 +50,7 @@ class DocumentResponse(BaseModel):
     title: str
     status: str
     chunk_count: int
+    embedded_chunk_count: int
     mime_type: str
     file_size: int
     file_hash: str
@@ -59,6 +73,8 @@ class SearchRequest(BaseModel):
     notebook_id: str
     query: str = Field(min_length=1)
     retrievers: list[RetrieverRequest] = Field(default_factory=lambda: [RetrieverRequest(mode="bm25")])
+    embedding_connection_id: str | None = None
+    embedding_api_key: str = Field(default="", max_length=500)
 
 
 class SearchHitResponse(BaseModel):
@@ -99,6 +115,8 @@ class RagRunRequest(BaseModel):
     final_context_limit: int = Field(default=8, ge=1, le=20)
     model_connection_id: str | None = None
     model_api_key: str = Field(default="", max_length=500)
+    embedding_connection_id: str | None = None
+    embedding_api_key: str = Field(default="", max_length=500)
 
 
 class CitationResponse(BaseModel):
@@ -215,3 +233,4 @@ class ModelConnectionTestRequest(BaseModel):
 class ModelConnectionTestResponse(BaseModel):
     status: Literal["ok"]
     models: list[str]
+    embedding_dimensions: int | None = None

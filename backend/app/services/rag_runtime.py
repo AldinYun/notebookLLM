@@ -147,6 +147,8 @@ class RagRuntime:
                 notebook_id=request.notebook_id,
                 query=standalone_query,
                 retrievers=retrievers,
+                embedding_connection_id=request.embedding_connection_id,
+                embedding_api_key=request.embedding_api_key,
             )
         )
         selected_hits = []
@@ -159,7 +161,14 @@ class RagRuntime:
                 continue
             seen_chunk_ids.add(hit.chunk_id)
             if request.self_corrective_enabled:
-                relevance_score = len(set(hit.matched_terms)) / max(len(query_terms), 1)
+                term_coverage = len(set(hit.matched_terms)) / max(len(query_terms), 1)
+                semantic_score = (
+                    min(max(hit.score, 0.0), 1.0)
+                    if request.embedding_connection_id is not None
+                    and hit.retriever in {"vector", "hybrid"}
+                    else 0.0
+                )
+                relevance_score = max(term_coverage, semantic_score)
                 if relevance_score >= 0.67:
                     label = "relevant"
                     included = True
@@ -175,7 +184,8 @@ class RagRuntime:
                         "label": label,
                         "relevance_score": round(relevance_score, 4),
                         "reason": (
-                            f"Matched {len(set(hit.matched_terms))} of {len(query_terms)} query terms"
+                            f"Matched {len(set(hit.matched_terms))} of {len(query_terms)} query terms; "
+                            f"retrieval score {hit.score:.4f}"
                         ),
                         "included": included,
                     }

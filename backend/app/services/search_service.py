@@ -4,6 +4,7 @@ from time import perf_counter
 
 from app.api.schemas import SearchRequest
 from app.domain.chunk import ChunkDocument
+from app.services.embedding_service import embedding_service
 from app.services.workspace_store import workspace_store
 
 
@@ -34,9 +35,17 @@ class SearchService:
         started_at = perf_counter()
         chunks = workspace_store.list_chunks(request.notebook_id)
         hits: list[SearchHit] = []
+        query_embedding: list[float] | None = None
+        needs_vectors = any(retriever.mode in {"vector", "hybrid"} for retriever in request.retrievers)
+        if needs_vectors and request.embedding_connection_id is not None:
+            query_embedding = embedding_service.embed_texts(
+                request.embedding_connection_id,
+                [request.query],
+                request.embedding_api_key,
+            )[0]
 
         for retriever in request.retrievers:
-            ranked = self._rank_chunks(chunks, request.query, retriever.mode)
+            ranked = self._rank_chunks(chunks, request.query, retriever.mode, query_embedding)
             for rank, (chunk, score, matched_terms) in enumerate(ranked[: retriever.top_k], start=1):
                 hits.append(
                     SearchHit(
@@ -67,6 +76,7 @@ class SearchService:
         chunks: list[ChunkDocument],
         query: str,
         mode: str,
+        query_embedding: list[float] | None,
     ) -> list[tuple[ChunkDocument, float, list[str]]]:
         query_terms = self._terms(query)
         ranked: list[tuple[ChunkDocument, float, list[str]]] = []
@@ -77,17 +87,20 @@ class SearchService:
             chunk_terms = self._terms(chunk.content_normalized)
             term_counts = Counter(chunk_terms)
             matched_terms = sorted(set(query_terms).intersection(chunk_terms))
-            if not matched_terms:
+            has_real_vector = query_embedding is not None and chunk.embedding is not None
+            if not matched_terms and (mode in {"text", "bm25"} or not has_real_vector):
                 continue
 
             if mode == "text":
                 score = len(matched_terms) / max(len(set(query_terms)), 1)
             elif mode == "vector":
-                score = self._cosine_like_score(query_terms, chunk_terms)
+                score = self._vector_score(query_embedding, chunk, query_terms, chunk_terms)
             elif mode == "hybrid":
                 score = 0.55 * self._bm25_like_score(
                     query_terms, term_counts, document_frequency, total_chunks
-                ) + 0.45 * self._cosine_like_score(query_terms, chunk_terms)
+                ) + 0.45 * self._vector_score(
+                    query_embedding, chunk, query_terms, chunk_terms
+                )
             else:
                 score = self._bm25_like_score(query_terms, term_counts, document_frequency, total_chunks)
 
@@ -131,6 +144,24 @@ class SearchService:
             return 0.0
         return numerator / (query_norm * chunk_norm)
 
+    def _vector_score(
+        self,
+        query_embedding: list[float] | None,
+        chunk: ChunkDocument,
+        query_terms: list[str],
+        chunk_terms: list[str],
+    ) -> float:
+        if query_embedding is None or chunk.embedding is None:
+            return self._cosine_like_score(query_terms, chunk_terms)
+        if len(query_embedding) != len(chunk.embedding):
+            return 0.0
+        numerator = sum(left * right for left, right in zip(query_embedding, chunk.embedding))
+        query_norm = sum(value * value for value in query_embedding) ** 0.5
+        chunk_norm = sum(value * value for value in chunk.embedding) ** 0.5
+        if query_norm == 0 or chunk_norm == 0:
+            return 0.0
+        return numerator / (query_norm * chunk_norm)
+
     def _snippet(self, content: str, matched_terms: list[str]) -> str:
         if not matched_terms:
             return content[:260]
@@ -144,4 +175,3 @@ class SearchService:
 
 
 search_service = SearchService()
-

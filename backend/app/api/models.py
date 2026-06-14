@@ -57,9 +57,22 @@ async def test_model_connection(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model connection not found")
     try:
         models = model_gateway.list_models(connection, payload.api_key)
+        embedding_dimensions = None
+        if "embedding" in connection["capabilities"]:
+            embedding_dimensions = len(
+                model_gateway.embed(
+                    connection,
+                    ["NotebookLLM embedding connection test"],
+                    payload.api_key,
+                )[0]
+            )
     except ModelGatewayError as error:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
-    return ModelConnectionTestResponse(status="ok", models=models)
+    return ModelConnectionTestResponse(
+        status="ok",
+        models=models,
+        embedding_dimensions=embedding_dimensions,
+    )
 
 
 @router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)

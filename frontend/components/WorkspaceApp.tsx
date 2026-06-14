@@ -32,6 +32,7 @@ type DocumentItem = {
   title: string;
   status: string;
   chunk_count: number;
+  embedded_chunk_count: number;
   mime_type: string;
   file_size: number;
   file_hash: string;
@@ -210,9 +211,12 @@ export function WorkspaceApp() {
   const [modelName, setModelName] = useState("Local vLLM");
   const [modelBaseUrl, setModelBaseUrl] = useState("http://localhost:8001/v1");
   const [modelId, setModelId] = useState("local-model");
+  const [modelCapability, setModelCapability] = useState<"chat" | "embedding">("chat");
   const [apiKey, setApiKey] = useState("");
   const [selectedModelConnectionId, setSelectedModelConnectionId] = useState("");
+  const [selectedEmbeddingConnectionId, setSelectedEmbeddingConnectionId] = useState("");
   const [runtimeApiKey, setRuntimeApiKey] = useState("");
+  const [embeddingApiKey, setEmbeddingApiKey] = useState("");
   const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
   const [ragResult, setRagResult] = useState<RagResponse | null>(null);
   const [ragExecutions, setRagExecutions] = useState<RagExecution[]>([]);
@@ -336,7 +340,18 @@ export function WorkspaceApp() {
     const connections = await requestJson<ModelConnection[]>("/models/connections");
     setModelConnections(connections);
     setSelectedModelConnectionId((current) =>
-      connections.some((connection) => connection.connection_id === current)
+      connections.some(
+        (connection) =>
+          connection.connection_id === current && connection.capabilities.includes("chat")
+      )
+        ? current
+        : ""
+    );
+    setSelectedEmbeddingConnectionId((current) =>
+      connections.some(
+        (connection) =>
+          connection.connection_id === current && connection.capabilities.includes("embedding")
+      )
         ? current
         : ""
     );
@@ -354,7 +369,7 @@ export function WorkspaceApp() {
           base_url: modelBaseUrl,
           model_id: modelId,
           api_key: apiKey,
-          capabilities: ["chat", "embedding"],
+          capabilities: [modelCapability],
         }),
       });
       setApiKey("");
@@ -386,15 +401,24 @@ export function WorkspaceApp() {
   async function testModelConnection(connectionId: string) {
     setIsBusy(true);
     try {
-      const result = await requestJson<{ status: string; models: string[] }>(
+      const result = await requestJson<{
+        status: string;
+        models: string[];
+        embedding_dimensions: number | null;
+      }>(
         `/models/connections/${connectionId}/test`,
         {
           method: "POST",
           body: JSON.stringify({ api_key: runtimeApiKey }),
         }
       );
+      const dimensions = result.embedding_dimensions
+        ? ` - ${result.embedding_dimensions} dimensions`
+        : "";
       setStatusMessage(
-        result.models.length ? `Connection ok: ${result.models.join(", ")}` : "Connection ok"
+        result.models.length
+          ? `Connection ok: ${result.models.join(", ")}${dimensions}`
+          : `Connection ok${dimensions}`
       );
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Model connection test failed");
@@ -500,6 +524,8 @@ export function WorkspaceApp() {
           title: documentTitle,
           content: documentContent,
           tags: ["mvp", "rag"],
+          embedding_connection_id: selectedEmbeddingConnectionId || null,
+          embedding_api_key: embeddingApiKey,
         }),
       });
       await refreshWorkspace(selectedNotebookId);
@@ -526,10 +552,14 @@ export function WorkspaceApp() {
         file_name: selectedFile.name,
         tags: "upload,mvp",
       });
+      if (selectedEmbeddingConnectionId) {
+        params.set("embedding_connection_id", selectedEmbeddingConnectionId);
+      }
       const response = await fetch(`${API_BASE_URL}/documents/upload?${params.toString()}`, {
         method: "POST",
         headers: {
           "Content-Type": selectedFile.type || "application/octet-stream",
+          "X-Embedding-API-Key": embeddingApiKey,
         },
         body: await selectedFile.arrayBuffer(),
       });
@@ -567,6 +597,32 @@ export function WorkspaceApp() {
     }
   }
 
+  async function embedDocument(documentId: string) {
+    if (!selectedEmbeddingConnectionId) {
+      setStatusMessage("Select an embedding model first");
+      return;
+    }
+    setIsBusy(true);
+    try {
+      const result = await requestJson<{ embedded_chunk_count: number }>(
+        `/documents/${documentId}/embed`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            embedding_connection_id: selectedEmbeddingConnectionId,
+            embedding_api_key: embeddingApiKey,
+          }),
+        }
+      );
+      await refreshWorkspace(selectedNotebookId);
+      setStatusMessage(`Embedded ${result.embedded_chunk_count} document chunks`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Document embedding failed");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function runSearch() {
     if (!selectedNotebookId) {
       setStatusMessage("Create or select a notebook first");
@@ -585,6 +641,8 @@ export function WorkspaceApp() {
             top_k: retriever.top_k,
             weight: retriever.weight,
           })),
+          embedding_connection_id: selectedEmbeddingConnectionId || null,
+          embedding_api_key: embeddingApiKey,
         }),
       });
       setSearchResult(result);
@@ -620,6 +678,8 @@ export function WorkspaceApp() {
           final_context_limit: activeFinalContextLimit,
           model_connection_id: selectedModelConnectionId || null,
           model_api_key: runtimeApiKey,
+          embedding_connection_id: selectedEmbeddingConnectionId || null,
+          embedding_api_key: embeddingApiKey,
         }),
       });
       if (!response.ok || !response.body) {
@@ -823,10 +883,20 @@ export function WorkspaceApp() {
                   <div>
                     <strong>{document.title}</strong>
                     <small>
-                      {document.file_name} - {document.chunk_count} chunks - {document.file_size} bytes
+                      {document.file_name} - {document.chunk_count} chunks - {document.embedded_chunk_count} embedded
                     </small>
                   </div>
                   <div className="documentActions">
+                    <button
+                      aria-label={`Embed ${document.title}`}
+                      className="iconButton secondaryButton"
+                      disabled={isBusy || !selectedEmbeddingConnectionId}
+                      onClick={() => void embedDocument(document.document_id)}
+                      title="Generate embeddings"
+                      type="button"
+                    >
+                      <Network aria-hidden="true" size={16} />
+                    </button>
                     <button
                       aria-label={`Download ${document.title}`}
                       className="iconButton secondaryButton"
@@ -985,6 +1055,16 @@ export function WorkspaceApp() {
                   onChange={(event) => setModelId(event.target.value)}
                   value={modelId}
                 />
+                <select
+                  aria-label="Model capability"
+                  onChange={(event) =>
+                    setModelCapability(event.target.value as "chat" | "embedding")
+                  }
+                  value={modelCapability}
+                >
+                  <option value="chat">Chat model</option>
+                  <option value="embedding">Embedding model</option>
+                </select>
                 <input
                   aria-label="API key"
                   onChange={(event) => setApiKey(event.target.value)}
@@ -1000,24 +1080,43 @@ export function WorkspaceApp() {
                 {modelConnections.map((connection) => (
                   <article
                     className={
-                      connection.connection_id === selectedModelConnectionId ? "selectedModel" : ""
+                      connection.connection_id === selectedModelConnectionId ||
+                      connection.connection_id === selectedEmbeddingConnectionId
+                        ? "selectedModel"
+                        : ""
                     }
                     key={connection.connection_id}
                   >
                     <div>
                       <strong>{connection.name}</strong>
                       <span>{connection.model_id}</span>
-                      <small>{connection.api_key_hint}</small>
+                      <small>
+                        {connection.capabilities.join(", ")} - {connection.api_key_hint}
+                      </small>
                     </div>
                     <div className="modelActions">
-                      <button
-                        className="iconButton secondaryButton"
-                        onClick={() => setSelectedModelConnectionId(connection.connection_id)}
-                        title="Use model"
-                        type="button"
-                      >
-                        <CheckCircle2 aria-hidden="true" size={15} />
-                      </button>
+                      {connection.capabilities.includes("chat") && (
+                        <button
+                          className="iconButton secondaryButton"
+                          onClick={() => setSelectedModelConnectionId(connection.connection_id)}
+                          title="Use as chat model"
+                          type="button"
+                        >
+                          <Bot aria-hidden="true" size={15} />
+                        </button>
+                      )}
+                      {connection.capabilities.includes("embedding") && (
+                        <button
+                          className="iconButton secondaryButton"
+                          onClick={() =>
+                            setSelectedEmbeddingConnectionId(connection.connection_id)
+                          }
+                          title="Use as embedding model"
+                          type="button"
+                        >
+                          <Network aria-hidden="true" size={15} />
+                        </button>
+                      )}
                       <button
                         className="iconButton secondaryButton"
                         disabled={isBusy}
@@ -1043,13 +1142,29 @@ export function WorkspaceApp() {
                 {modelConnections.length === 0 && <p className="emptyState">No model connections yet.</p>}
               </div>
               <input
-                aria-label="Runtime model API key"
+                aria-label="Runtime chat model API key"
                 className="runtimeKeyInput"
                 onChange={(event) => setRuntimeApiKey(event.target.value)}
-                placeholder="Runtime API key (not stored)"
+                placeholder="Chat API key (not stored)"
                 type="password"
                 value={runtimeApiKey}
               />
+              <input
+                aria-label="Runtime embedding model API key"
+                className="runtimeKeyInput"
+                onChange={(event) => setEmbeddingApiKey(event.target.value)}
+                placeholder="Embedding API key (not stored)"
+                type="password"
+                value={embeddingApiKey}
+              />
+              <div className="modelSelectionSummary">
+                <span>
+                  Chat: {modelConnections.find((item) => item.connection_id === selectedModelConnectionId)?.name ?? "none"}
+                </span>
+                <span>
+                  Embedding: {modelConnections.find((item) => item.connection_id === selectedEmbeddingConnectionId)?.name ?? "none"}
+                </span>
+              </div>
             </section>
 
             <section className="statusPanel">
