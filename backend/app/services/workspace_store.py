@@ -101,6 +101,7 @@ class WorkspaceStore:
                     elapsed_ms REAL NOT NULL,
                     model_connection_id TEXT,
                     generation_mode TEXT NOT NULL DEFAULT 'placeholder',
+                    correction_evaluations_json TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT NOT NULL
                 );
 
@@ -357,6 +358,7 @@ class WorkspaceStore:
         elapsed_ms: float,
         model_connection_id: str | None,
         generation_mode: str,
+        correction_evaluations: list[dict],
     ) -> None:
         with self._connect() as connection:
             connection.execute(
@@ -374,9 +376,10 @@ class WorkspaceStore:
                     elapsed_ms,
                     model_connection_id,
                     generation_mode,
+                    correction_evaluations_json,
                     created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     rag_execution_id,
@@ -391,6 +394,7 @@ class WorkspaceStore:
                     elapsed_ms,
                     model_connection_id,
                     generation_mode,
+                    json.dumps(correction_evaluations),
                     _serialize_datetime(utc_now()),
                 ),
             )
@@ -637,6 +641,7 @@ class WorkspaceStore:
             "elapsed_ms": float(row["elapsed_ms"]),
             "model_connection_id": row["model_connection_id"],
             "generation_mode": row["generation_mode"],
+            "correction_evaluations": json.loads(row["correction_evaluations_json"]),
             "created_at": _parse_datetime(row["created_at"]),
         }
 
@@ -698,6 +703,10 @@ class WorkspaceStore:
             "generation_mode": (
                 "ALTER TABLE rag_executions ADD COLUMN generation_mode TEXT NOT NULL "
                 "DEFAULT 'placeholder'"
+            ),
+            "correction_evaluations_json": (
+                "ALTER TABLE rag_executions ADD COLUMN correction_evaluations_json TEXT NOT NULL "
+                "DEFAULT '[]'"
             ),
         }
         for column, statement in migrations.items():

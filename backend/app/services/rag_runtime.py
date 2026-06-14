@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from uuid import uuid4
 
-from app.api.schemas import CitationResponse, RagRunRequest, SearchRequest
+from app.api.schemas import CitationResponse, RagRunRequest, RetrieverRequest, SearchRequest
 from app.services.model_gateway import ModelGatewayError, model_gateway
 from app.services.search_service import SearchResult, search_service
 from app.services.workspace_store import workspace_store
@@ -16,6 +16,7 @@ class PreparedRag:
     search: SearchResult
     citations: list[CitationResponse]
     excluded_chunk_ids: list[str]
+    correction_evaluations: list[dict]
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,7 @@ class RagRunResult:
     elapsed_ms: float
     model_connection_id: str | None
     generation_mode: str
+    correction_evaluations: list[dict]
 
 
 class RagRuntime:
@@ -64,6 +66,7 @@ class RagRuntime:
             elapsed_ms=elapsed_ms,
             model_connection_id=request.model_connection_id,
             generation_mode=generation_mode,
+            correction_evaluations=prepared.correction_evaluations,
         )
 
     def stream(self, request: RagRunRequest) -> Iterator[dict]:
@@ -81,6 +84,7 @@ class RagRuntime:
             "model_connection_id": request.model_connection_id,
             "self_corrective_enabled": request.self_corrective_enabled,
             "excluded_chunk_ids": prepared.excluded_chunk_ids,
+            "correction_evaluations": prepared.correction_evaluations,
         }
 
         answer_parts: list[str] = []
@@ -115,23 +119,57 @@ class RagRuntime:
 
     def _prepare(self, request: RagRunRequest) -> PreparedRag:
         standalone_query = request.question.strip()
+        retrievers = request.retrievers
+        if request.self_corrective_enabled:
+            retrievers = [
+                RetrieverRequest(
+                    mode=retriever.mode,
+                    top_k=min(retriever.top_k * 3, 20),
+                    weight=retriever.weight,
+                )
+                for retriever in request.retrievers
+            ]
         search_result = search_service.search(
             SearchRequest(
                 notebook_id=request.notebook_id,
                 query=standalone_query,
-                retrievers=request.retrievers,
+                retrievers=retrievers,
             )
         )
         selected_hits = []
         excluded_chunk_ids: list[str] = []
+        correction_evaluations: list[dict] = []
         seen_chunk_ids: set[str] = set()
+        query_terms = set(self._terms(standalone_query))
         for hit in search_result.hits:
             if hit.chunk_id in seen_chunk_ids:
                 continue
             seen_chunk_ids.add(hit.chunk_id)
-            if request.self_corrective_enabled and hit.score <= 0:
-                excluded_chunk_ids.append(hit.chunk_id)
-                continue
+            if request.self_corrective_enabled:
+                relevance_score = len(set(hit.matched_terms)) / max(len(query_terms), 1)
+                if relevance_score >= 0.67:
+                    label = "relevant"
+                    included = True
+                elif relevance_score >= 0.34:
+                    label = "partially_relevant"
+                    included = True
+                else:
+                    label = "irrelevant"
+                    included = False
+                correction_evaluations.append(
+                    {
+                        "chunk_id": hit.chunk_id,
+                        "label": label,
+                        "relevance_score": round(relevance_score, 4),
+                        "reason": (
+                            f"Matched {len(set(hit.matched_terms))} of {len(query_terms)} query terms"
+                        ),
+                        "included": included,
+                    }
+                )
+                if not included:
+                    excluded_chunk_ids.append(hit.chunk_id)
+                    continue
             selected_hits.append(hit)
             if len(selected_hits) >= request.final_context_limit:
                 break
@@ -152,6 +190,7 @@ class RagRuntime:
             search=search_result,
             citations=citations,
             excluded_chunk_ids=excluded_chunk_ids,
+            correction_evaluations=correction_evaluations,
         )
 
     def _get_model_connection(self, connection_id: str | None) -> dict | None:
@@ -183,6 +222,7 @@ class RagRuntime:
             elapsed_ms=elapsed_ms,
             model_connection_id=request.model_connection_id,
             generation_mode=generation_mode,
+            correction_evaluations=prepared.correction_evaluations,
         )
 
     def _search_payload(self, search_result: SearchResult) -> dict:
@@ -205,6 +245,10 @@ class RagRuntime:
             f"Primary support is available in {citation_list}. This is a placeholder response "
             "until a real LLM model connection is configured."
         )
+
+    def _terms(self, text: str) -> list[str]:
+        normalized = "".join(char.lower() if char.isalnum() else " " for char in text)
+        return [term for term in normalized.split() if len(term) > 1]
 
 
 rag_runtime = RagRuntime()

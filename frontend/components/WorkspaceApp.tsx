@@ -75,6 +75,14 @@ type Citation = {
   quote: string;
 };
 
+type CorrectionEvaluation = {
+  chunk_id: string;
+  label: "relevant" | "partially_relevant" | "irrelevant";
+  relevance_score: number;
+  reason: string;
+  included: boolean;
+};
+
 type RagResponse = {
   rag_execution_id: string;
   question: string;
@@ -87,6 +95,7 @@ type RagResponse = {
   elapsed_ms: number;
   model_connection_id: string | null;
   generation_mode: "placeholder" | "model";
+  correction_evaluations: CorrectionEvaluation[];
 };
 
 type RagExecution = RagResponse & {
@@ -584,6 +593,8 @@ export function WorkspaceApp() {
               elapsed_ms: 0,
               model_connection_id: (event.model_connection_id as string | null) ?? null,
               generation_mode: event.generation_mode as "placeholder" | "model",
+              correction_evaluations:
+                (event.correction_evaluations as CorrectionEvaluation[] | undefined) ?? [],
             };
             setRagResult(currentResult);
             setSearchResult(currentResult.search);
@@ -1011,7 +1022,9 @@ export function WorkspaceApp() {
                 </li>
                 <li>
                   <CheckCircle2 aria-hidden="true" size={16} />
-                  {ragResult ? `${ragResult.excluded_chunk_ids.length} chunks excluded` : "No correction trace"}
+                  {ragResult
+                    ? `${ragResult.correction_evaluations.length} candidates evaluated, ${ragResult.excluded_chunk_ids.length} excluded`
+                    : "No correction trace"}
                 </li>
                 <li>
                   <CheckCircle2 aria-hidden="true" size={16} />
@@ -1022,6 +1035,19 @@ export function WorkspaceApp() {
                   {ragResult ? `Generation: ${ragResult.generation_mode}` : "No generation yet"}
                 </li>
               </ol>
+              {ragResult && ragResult.correction_evaluations.length > 0 && (
+                <div className="correctionList">
+                  {ragResult.correction_evaluations.slice(0, 6).map((evaluation) => (
+                    <div className="correctionItem" key={evaluation.chunk_id}>
+                      <span className={`correctionBadge ${evaluation.label}`}>
+                        {evaluation.label.replace("_", " ")}
+                      </span>
+                      <strong>{Math.round(evaluation.relevance_score * 100)}%</strong>
+                      <small>{evaluation.reason}</small>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section className="statusPanel">

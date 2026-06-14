@@ -108,6 +108,14 @@ class CitationResponse(BaseModel):
     quote: str
 
 
+class CorrectionEvaluationResponse(BaseModel):
+    chunk_id: str
+    label: Literal["relevant", "partially_relevant", "irrelevant"]
+    relevance_score: float
+    reason: str
+    included: bool
+
+
 class RagRunResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -122,6 +130,7 @@ class RagRunResponse(BaseModel):
     elapsed_ms: float
     model_connection_id: str | None
     generation_mode: Literal["placeholder", "model"]
+    correction_evaluations: list[CorrectionEvaluationResponse]
 
 
 class RagExecutionResponse(RagRunResponse):

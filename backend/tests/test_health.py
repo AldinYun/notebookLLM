@@ -101,6 +101,7 @@ def test_text_ingestion_search_and_rag_flow() -> None:
     rag_payload = rag_response.json()
     assert "answer" in rag_payload
     assert rag_payload["rag_execution_id"].startswith("rag_")
+    assert rag_payload["correction_evaluations"]
 
     history_response = client.get(f"/rag/executions?notebook_id={notebook_id}")
     assert history_response.status_code == 200
@@ -109,6 +110,47 @@ def test_text_ingestion_search_and_rag_flow() -> None:
     execution_response = client.get(f"/rag/executions/{rag_payload['rag_execution_id']}")
     assert execution_response.status_code == 200
     assert execution_response.json()["question"] == "How does retrieval work?"
+
+
+def test_self_corrective_rag_excludes_weak_candidates() -> None:
+    client = TestClient(create_app())
+    notebook_id = client.post(
+        "/notebooks",
+        json={"title": "Corrective RAG", "description": "candidate evaluation"},
+    ).json()["notebook_id"]
+    client.post(
+        "/documents/ingest-text",
+        json={
+            "notebook_id": notebook_id,
+            "file_name": "evidence.md",
+            "title": "Corrective Evidence",
+            "content": "Alpha beta gamma evidence.\nAlpha appears without the other terms.",
+        },
+    )
+
+    response = client.post(
+        "/rag/run",
+        json={
+            "notebook_id": notebook_id,
+            "question": "alpha beta gamma",
+            "retrievers": [{"mode": "bm25", "top_k": 1}],
+            "self_corrective_enabled": True,
+            "final_context_limit": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["correction_evaluations"]) == 2
+    assert payload["correction_evaluations"][0]["label"] == "relevant"
+    assert payload["correction_evaluations"][1]["label"] == "irrelevant"
+    assert payload["correction_evaluations"][1]["included"] is False
+    assert payload["excluded_chunk_ids"] == [
+        payload["correction_evaluations"][1]["chunk_id"]
+    ]
+
+    history = client.get(f"/rag/executions?notebook_id={notebook_id}").json()
+    assert history[0]["correction_evaluations"] == payload["correction_evaluations"]
 
 
 def test_file_upload_duplicate_detection_and_delete() -> None:

@@ -628,6 +628,59 @@ small {
   line-height: 1.35;
 }
 
+.correctionList {
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.correctionItem {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.correctionItem strong {
+  color: #344054;
+  font-size: 0.78rem;
+}
+
+.correctionItem small {
+  color: var(--muted);
+  grid-column: 1 / -1;
+  line-height: 1.35;
+}
+
+.correctionBadge {
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  overflow: hidden;
+  padding: 3px 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: fit-content;
+}
+
+.correctionBadge.relevant {
+  background: #dcfae6;
+  color: #067647;
+}
+
+.correctionBadge.partially_relevant {
+  background: #fef0c7;
+  color: #b54708;
+}
+
+.correctionBadge.irrelevant {
+  background: #fee4e2;
+  color: #b42318;
+}
+
 .emphasis {
   background: #fff7ed;
   border-color: #fed7aa;
