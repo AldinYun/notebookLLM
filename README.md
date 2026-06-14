@@ -87,3 +87,60 @@ Local MVP data is stored in SQLite at `backend/.data/insight.db` by default. Ove
 ```bash
 INSIGHT_SQLITE_PATH=/path/to/insight.db
 ```
+
+## Server Deployment
+
+The current MVP can run as two containers with one persistent Docker volume:
+
+- `frontend`: Next.js standalone server on port `3000`
+- `backend`: FastAPI API on port `8000`
+- `notebookllm-data`: SQLite database and uploaded source files
+
+On a Linux server with Docker and the Compose plugin installed:
+
+```bash
+git clone https://github.com/AldinYun/notebookLLM.git
+cd notebookLLM
+cp .env.deploy.example .env
+chmod +x deploy.sh
+./deploy.sh
+```
+
+Open `http://SERVER_IP:3000`. API health and documentation are available at
+`http://SERVER_IP:8000/health` and `http://SERVER_IP:8000/docs`.
+
+Useful operations:
+
+```bash
+docker compose --env-file .env -f compose.deploy.yml logs -f
+docker compose --env-file .env -f compose.deploy.yml pull
+docker compose --env-file .env -f compose.deploy.yml up -d --build
+docker compose --env-file .env -f compose.deploy.yml down
+```
+
+`down` preserves the named data volume. Do not add `-v` unless the stored notebooks and uploads
+should be deleted.
+
+### Model Server
+
+Only an OpenAI-compatible chat model is required for the current MVP. Start vLLM, Ollama with an
+OpenAI-compatible endpoint, or another compatible server separately, then create a model connection
+in the UI. When the model runs directly on the same Linux host as Docker, use a base URL such as:
+
+```text
+http://host.docker.internal:8001/v1
+```
+
+When it runs on another machine, use `http://MODEL_SERVER_IP:PORT/v1`. The model endpoint must be
+reachable from the backend container; it does not need to be publicly reachable from the browser.
+
+The current `vector` retriever is a local lexical cosine approximation and does not call an embedding
+model yet. Running a separate embedding server will therefore not change retrieval quality until the
+embedding gateway and a vector index are connected. PostgreSQL, OpenSearch, and S3-compatible storage
+in `infra/docker-compose.yml` are architecture targets and are also not required by this deployment.
+
+For an internet-facing installation, place a TLS reverse proxy such as Caddy, Nginx, or Traefik in
+front of port `3000`, and restrict direct access to port `8000` with the server firewall.
+
+This MVP does not include login or authorization yet. Keep it on a private network or behind an
+authenticated reverse proxy while evaluating it; do not expose it as a public multi-user service.

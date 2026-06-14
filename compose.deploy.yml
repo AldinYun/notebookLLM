@@ -1,0 +1,47 @@
+name: notebookllm
+
+services:
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      INSIGHT_APP_NAME: ${INSIGHT_APP_NAME:-NotebookLLM API}
+      INSIGHT_ENVIRONMENT: production
+      INSIGHT_SQLITE_PATH: /data/insight.db
+      INSIGHT_STORAGE_PATH: /data/storage
+    volumes:
+      - notebookllm-data:/data
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  notebookllm-data:
